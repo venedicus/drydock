@@ -1,0 +1,61 @@
+[project]
+name = "drydock"
+version = "0.3.1"
+description = "Rescue files from a failing Yandex.Disk: inventory, availability probe, selective download, 7z archiving"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.12"
+keywords = ["yandex-disk", "recovery", "backup", "salvage", "archive", "7z"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Win32 (MS Windows)",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: System :: Archiving :: Backup",
+]
+dependencies = [
+    "httpx[http2]>=0.27",
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+]
+
+# Тесты: pytest с распределением по файлам (свой корень на файл -- см.
+# tests/conftest.py) и линтер. Ставятся командой:
+#   uv pip install --python .venv/Scripts/python.exe -e ".[dev]"
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-xdist>=3",
+    "ruff>=0.6",
+    # Для tools/ui_check.py: проверка интерфейса в настоящем браузере.
+    "websockets>=12",
+]
+
+[project.scripts]
+drydock = "drydock.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["drydock"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[project.urls]
+Homepage = "https://github.com/venedicus/drydock"
+Issues = "https://github.com/venedicus/drydock/issues"
+Changelog = "https://github.com/venedicus/drydock/blob/main/CHANGELOG.md"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Каждый файл тестов -- отдельный процесс (xdist, распределение по файлу).
+# Причина не в скорости: файл тестов при импорте задаёт свой
+# DRYDOCK_ROOT, а config.PATHS связывается один раз на процесс. В
+# одном процессе победил бы первый импортировавшийся файл, и тесты разных
+# файлов работали бы с чужой базой и чужими путями.
+addopts = "--dist=loadfile -n 2"

@@ -1,0 +1,14 @@
+# Текст — в LF, чтобы диффы не зависели от машины.
+* text=auto eol=lf
+
+# Windows-скрипты должны остаться CRLF: cmd.exe иначе спотыкается.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Двоичное не трогаем.
+*.png binary
+*.jpg binary
+*.ico binary
+*.7z binary
+*.exe binary
