@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Вопрос по безопасности
+    url: https://github.com/venedicus/drydock/blob/main/SECURITY.md
+    about: Утечка токена, удаление без копии, обход проверки хеша — сюда, не в issue.
+  - name: Как участвовать
+    url: https://github.com/venedicus/drydock/blob/main/CONTRIBUTING.md
+    about: Настройка окружения, тесты, правила переводов.

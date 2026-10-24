@@ -1,0 +1,35 @@
+name: Предложение
+description: Идея, как сделать полезнее или понятнее
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Какая задача не решается
+      description: Лучше описать ситуацию, а не готовое решение.
+      placeholder: "Когда файлов тысячи, непонятно, с чего начать: круг идёт, но что он делает сейчас — не видно."
+    validations:
+      required: true
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: Что предлагаете
+    validations:
+      required: false
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Что это касается
+      options:
+        - Интерфейс
+        - Выгрузка и круг
+        - Опись и проба
+        - Архив и удаление
+        - Отчёт «Здоровье»
+        - Переводы
+        - Документация
+        - Другое
+    validations:
+      required: true

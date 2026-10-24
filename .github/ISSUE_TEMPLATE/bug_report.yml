@@ -1,0 +1,56 @@
+name: Ошибка
+description: Программа сделала не то — соврала в числах, потеряла задачу, упала
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Не прикладывайте токены, Client secret и `credentials.bin`.**
+        Не нужны и скриншоты с реальными именами файлов — замените на `XXXX`.
+        Если речь о доступе к данным, лучше [SECURITY.md](../blob/main/SECURITY.md).
+
+  - type: textarea
+    id: what
+    attributes:
+      label: Что произошло
+      description: Что вы увидели и где именно — в окне, в задаче, в логе.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Что должно было быть
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Как повторить
+      placeholder: |
+        1. Нажал «Круг» на папке …
+        2. Через минуту задача сказала «готово»
+        3. В «Здоровье» при этом 200 провалов
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Версия
+      description: Коммит или тег, а также версия Windows и Python
+      placeholder: "0.1.0, Windows 11 24H2, Python 3.12.7"
+    validations:
+      required: true
+
+  - type: textarea
+    id: log
+    attributes:
+      label: Что в логе
+      description: |
+        `%LOCALAPPDATA%\Drydock\launch.log` и лог программы из папки спасения.
+        Уберите пути, имена файлов и токены.
+      render: text
+    validations:
+      required: false

@@ -1,0 +1,41 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  exe:
+    # Один файл для тех, у кого нет Python. Прикладывается к релизу,
+    # который создан по этому же тегу.
+    runs-on: windows-latest
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: "utf-8"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Установка
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]" pyinstaller
+
+      - name: Сборка
+        run: python tools/build_exe.py
+
+      - name: Проверка запуска
+        run: python tools/check_exe.py
+
+      - name: Приложить к релизу
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/Drydock.exe
+          fail_on_unmatched_files: true
