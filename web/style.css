@@ -681,3 +681,8 @@ input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none;
   .act { min-width: 132px; padding: 6px 10px; }
   .acts .tools-act { flex: 1 1 180px; }
 }
+
+/* Выборочное удаление: заметно, но не спорит с основной кнопкой. */
+#modal-foot button.accent { border-color: var(--accent); color: var(--accent);
+                            background: none; }
+#modal-foot button.accent:hover { background: var(--bg-3); }

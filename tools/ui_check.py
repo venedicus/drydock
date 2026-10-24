@@ -219,6 +219,29 @@ def main() -> int:
               "fetch('/api/export?format=csv').then(r => r.ok && "
               "(r.headers.get('content-type') || '').includes('text/csv'))")
 
+        # Окно удаления: безопасный уровень основной, «мусора» нет.
+        page.js("cloudDeleteChoose()")
+        time.sleep(0.5)
+        check("в окне удаления нет кнопки «мусор»",
+              "!document.querySelector('#modal-foot .danger')")
+        check("«скачано и хеш сошёлся» — основная кнопка",
+              "(() => { const b = [...document.querySelectorAll"
+              "('#modal-foot button')].find(x => x.className.includes('primary'));"
+              " return !!b && b.textContent === t('del.level.downloaded'); })()")
+        check("«выбранное» без выбора не показывается",
+              "![...document.querySelectorAll('#modal-foot button')]"
+              ".some(b => b.textContent === t('del.level.selected'))")
+        page.js("closeModal()")
+        time.sleep(0.2)
+        # С выбором в дереве появляется третий вариант.
+        page.js("sel.files.add('disk:/check/x.bin'); cloudDeleteChoose()")
+        time.sleep(0.5)
+        check("«выбранное» появляется при выборе",
+              "[...document.querySelectorAll('#modal-foot button')]"
+              ".some(b => b.textContent === t('del.level.selected'))")
+        page.js("closeModal(); sel.files.clear(); refreshSelection()")
+        time.sleep(0.2)
+
         # Своё подтверждение вместо браузерного confirm().
         check("подтверждение открывается своим окном",
               "(() => { confirmModal(t('dlg.title'), 'x', 'ok');"

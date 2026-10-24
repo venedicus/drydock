@@ -1160,6 +1160,10 @@ class DeleteBody(Selection):
 @app.post("/api/cloud-delete/preview")
 def cloud_delete_preview(body: DeleteBody) -> dict:
     paths = _resolve(body) or None
+    if body.level == "selected" and not paths:
+        # «Выбранное» без выбора -- это была бы команда «удалить всё»,
+        # то есть ровно противоположное намерению.
+        raise HTTPException(400, {"code": "err.needSelection"})
     allowed, blocked = cloud.eligible(conn(), paths, level=body.level)
     reasons: dict[str, int] = {}
     for b in blocked:
@@ -1170,6 +1174,9 @@ def cloud_delete_preview(body: DeleteBody) -> dict:
         "blocked": len(blocked),
         "reasons": reasons,
         "confirm": len(allowed),
+        # Сколько из попавших под удаление не имеют проверенной копии --
+        # для предупреждения при выборочном удалении.
+        "unsaved": len([a for a in allowed if not a["verify"]]),
         "sample": [a["path"] for a in allowed[:20]],
     }
 
@@ -1177,6 +1184,8 @@ def cloud_delete_preview(body: DeleteBody) -> dict:
 @app.post("/api/cloud-delete")
 def cloud_delete(body: DeleteBody) -> dict:
     paths = _resolve(body) or None
+    if body.level == "selected" and not paths:
+        raise HTTPException(400, {"code": "err.needSelection"})
     allowed, _ = cloud.eligible(conn(), paths, level=body.level)
     if body.confirm != len(allowed):
         raise HTTPException(400, {"code": "err.confirmMismatch",
