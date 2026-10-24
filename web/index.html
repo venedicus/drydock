@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Drydock</title>
+<script>
+// Тема ставится до первой отрисовки: иначе окно мигает чужим цветом.
+try {
+  var th = localStorage.getItem("cr-theme") || "auto";
+  var dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  document.documentElement.dataset.theme =
+    th === "auto" ? (dark ? "dark" : "light") : th;
+} catch (e) {
+  document.documentElement.dataset.theme = "dark";
+}
+// Масштаб и плотность -- тоже до первой отрисовки: иначе окно мигает
+// обычным размером и перескакивает.
+try {
+  var sc = Number(localStorage.getItem("cr-scale")) || 0;
+  if (!sc) {
+    var w = window.innerWidth;
+    var dpr = window.devicePixelRatio || 1;
+    sc = w < 1100 ? 90 : w < 1400 ? 100 : w < 1700 ? (dpr > 1.5 ? 100 : 105) : 110;
+  }
+  document.documentElement.style.zoom = String(sc / 100);
+  if (localStorage.getItem("cr-density") === "compact") {
+    document.addEventListener("DOMContentLoaded", function () {
+      document.body.classList.add("dense");
+    });
+  }
+} catch (e) {}
+</script>
+<link rel="icon" href="favicon.ico" sizes="any">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <div class="brand">Drydock</div>
+  <!-- Линза меняет ВСЕ числа разом: дерево, итоги, подсказки. Раньше одна
+       строка отвечала сразу на три разных вопроса, и папка, от которой в
+       облаке ничего не осталось, выглядела полной. -->
+  <div class="lens" id="lens">
+    <span class="lens-lbl" data-i18n="lens.label"></span>
+    <button data-lens="now" data-i18n="lens.now" data-i18n-title="lens.now.title"></button>
+    <button data-lens="was" data-i18n="lens.was" data-i18n-title="lens.was.title"></button>
+    <button data-lens="disk" data-i18n="lens.disk" data-i18n-title="lens.disk.title"></button>
+  </div>
+  <span id="summary" class="summary"></span>
+  <span class="grow"></span>
+  <!-- Аккаунт всегда на виду: раньше вход жил в меню «Ещё», и понять,
+       под кем работаешь и жив ли токен, было нельзя без захода туда. -->
+  <button id="btn-auth" class="auth-btn" data-i18n-title="btn.auth.title">
+    <i class="dot2" id="auth-dot"></i><span id="auth-label"></span>
+  </button>
+  <!-- Поддержка -- всегда на виду: в «Инструментах» она в самом низу
+       списка, и без кнопки в шапке её никто бы не нашёл. -->
+  <a id="btn-support" class="ghost theme-btn heart-btn" target="_blank"
+     rel="noopener" href="https://venedicus.github.io/drydock/"
+     data-i18n-title="support.title" data-i18n-aria="support.label">♥</a>
+  <!-- Автопилот: раньше галочка в «Инструментах», и включённость не была
+       видна снаружи. -->
+  <button id="btn-autopilot" class="ghost auto-btn"
+          data-i18n-title="autopilot.title">
+    <span class="auto-dot" aria-hidden="true"></span>
+    <span data-i18n="autopilot.short"></span>
+  </button>
+  <button id="btn-view" class="ghost theme-btn" data-i18n-title="view.title"
+          aria-label="Aa">Aa</button>
+  <!-- Поповер вида: масштаб, плотность, тема. Одна кнопка вместо трёх. -->
+  <div id="view-pop" class="view-pop hidden" role="dialog" aria-label="view">
+    <div class="vp-row"><span class="vp-l" data-i18n="view.scale"></span>
+      <input type="range" id="scale-range" min="80" max="150" step="5"
+             aria-label="scale">
+      <span class="vp-val" id="scale-val">100%</span>
+    </div>
+    <div class="vp-row"><span class="vp-l"></span>
+      <button class="vp-auto" id="scale-auto" data-i18n="view.autoShort"></button>
+      <span class="vp-hint" data-i18n="view.scale.hint"></span>
+    </div>
+    <div class="vp-row"><span class="vp-l" data-i18n="view.density"></span>
+      <span class="vp-btns" id="density-btns"></span></div>
+    <div class="vp-row"><span class="vp-l" data-i18n="theme.title"></span>
+      <span class="vp-btns" id="theme-btns"></span></div>
+    <div class="vp-note" id="view-note"></div>
+  </div>
+  <button id="btn-palette" class="ghost kbd-btn" data-i18n-title="palette.title"
+          aria-label="Ctrl K">Ctrl K</button>
+  <button id="btn-help" class="ghost help" data-i18n-title="help.title"
+          aria-label="?">?</button>
+  <span id="lang-slot"></span>
+</header>
+
+<!-- Четыре главные действия. Число внутри кнопки -- это и есть сводка:
+     раньше её несли одиннадцать чипов, и все их приходилось читать. -->
+<section class="acts">
+  <button class="act" id="btn-scan" data-i18n-title="act.scan.title">
+    <span class="t" data-i18n="act.scan"></span>
+    <span class="n" id="n-scan">—</span>
+    <span class="s" id="s-scan"></span>
+  </button>
+  <button class="act" id="btn-probe-quick" data-i18n-title="act.probe.title">
+    <span class="t" data-i18n="act.probe"></span>
+    <span class="n" id="n-probe-quick">—</span>
+    <span class="s" id="s-probe-quick"></span>
+  </button>
+  <button class="act primary" id="btn-loop" data-i18n-title="act.loop.title">
+    <span class="t" data-i18n="act.loop"></span>
+    <span class="n" id="n-loop">—</span>
+    <span class="s" id="s-loop"></span>
+  </button>
+  <button class="act" id="btn-archive" data-i18n-title="act.archive.title">
+    <span class="t" data-i18n="act.archive"></span>
+    <span class="n" id="n-archive">—</span>
+    <span class="s" id="s-archive"></span>
+  </button>
+  <button class="act danger" id="btn-cloud-delete" data-i18n-title="act.delete.title">
+    <span class="t" data-i18n="act.delete"></span>
+    <span class="n" id="n-delete">—</span>
+    <span class="s" id="s-delete"></span>
+  </button>
+
+    <button class="act tools-act" id="btn-tools" data-i18n-title="tools.hint">
+    <span class="t" data-i18n="tools.title"></span>
+    <span class="s" data-i18n="tools.subtitle"></span>
+  </button>
+</section>
+
+<!-- Инструменты: вспомогательные действия по секциям. Раньше это был
+     один ряд из шестнадцати элементов без иерархии, где настройки
+     архивации вообще не заполнялись. -->
+<div id="tools" class="modal hidden" role="dialog" aria-modal="true"
+     aria-labelledby="tools-title">
+  <div class="modal-box tools-box">
+    <div class="modal-head"><span id="tools-title" data-i18n="tools.title"></span>
+      <button id="tools-close" class="ghost" aria-label="Esc">×</button></div>
+    <div class="modal-body">
+      <p class="dim tools-hint" data-i18n="tools.hint"></p>
+
+      <h4 data-i18n="grp.inventory"></h4>
+      <button class="tool" id="btn-previews" data-i18n-title="btn.previews.title">
+        <span class="tn" data-i18n="btn.previews"></span>
+        <span class="td" data-i18n="tools.previews.why"></span>
+      </button>
+      <div class="tool hidden" id="scan-restart-wrap" data-i18n-title="scan.restart.title">
+        <span class="tn"><span data-i18n="scan.restart"></span></span>
+        <span class="td" data-i18n="tools.restart.why"></span>
+        <label class="switch"><input type="checkbox" id="scan-restart"></label>
+      </div>
+      <div class="tool-note" id="scan-hint"></div>
+
+      <h4 data-i18n="grp.access"></h4>
+      <div class="tool">
+        <span class="tn"><span data-i18n="btn.probe"></span></span>
+        <span class="td" data-i18n="tools.probe.why"></span>
+        <span class="tool-ctl">
+          <select id="probe-scope" data-i18n-title="probe.scope.title">
+            <option value="selection" data-i18n="probe.scope.selection"></option>
+            <option value="unchecked" selected data-i18n="probe.scope.unchecked"></option>
+            <option value="unavailable" data-i18n="probe.scope.unavailable"></option>
+            <option value="stale" data-i18n="probe.scope.stale"></option>
+            <option value="all" data-i18n="probe.scope.all"></option>
+          </select>
+          <button id="btn-probe" data-i18n="btn.probe.run"
+                  data-i18n-title="btn.probe.title"></button>
+        </span>
+      </div>
+      <div class="tool" data-i18n-title="autopilot.title">
+        <span class="tn"><span data-i18n="autopilot.label"></span></span>
+        <span class="td" data-i18n="tools.autopilot.why"></span>
+        <label class="switch"><input type="checkbox" id="autopilot"></label>
+      </div>
+      <button class="tool" id="btn-hosts">
+        <span class="tn" data-i18n="hosts.title"></span>
+        <span class="td" data-i18n="tools.hosts.why"></span>
+      </button>
+
+      <h4 data-i18n="grp.rescue"></h4>
+      <button class="tool" id="btn-download">
+        <span class="tn" data-i18n="btn.download"></span>
+        <span class="td" data-i18n="tools.download.why"></span>
+      </button>
+      <div class="tool" data-i18n-title="salvage.title">
+        <span class="tn"><span data-i18n="salvage.short"></span></span>
+        <span class="td" data-i18n="tools.salvage.why"></span>
+        <label class="switch"><input type="checkbox" id="salvage"></label>
+      </div>
+
+      <h4 data-i18n="grp.archive"></h4>
+      <button class="tool" id="btn-archives" data-i18n-title="btn.archives.title">
+        <span class="tn" data-i18n="btn.archives"></span>
+        <span class="td" data-i18n="tools.archives.why"></span>
+      </button>
+
+      <h4 data-i18n="grp.service"></h4>
+      <button class="tool" id="btn-adopt" data-i18n-title="btn.adopt.title">
+        <span class="tn" data-i18n="btn.adopt"></span>
+        <span class="td" data-i18n="tools.adopt.why"></span>
+      </button>
+      <button class="tool" id="btn-mirror" data-i18n-title="btn.mirror.title">
+        <span class="tn" data-i18n="btn.mirror"></span>
+        <span class="td" data-i18n="tools.mirror.why"></span>
+      </button>
+      <button class="tool" id="btn-health">
+        <span class="tn" data-i18n="health.title"></span>
+        <span class="td" data-i18n="tools.health.why"></span>
+      </button>
+      <button class="tool" id="btn-log" data-i18n-title="btn.log.title">
+        <span class="tn" data-i18n="btn.log"></span>
+        <span class="td" data-i18n="tools.log.why"></span>
+      </button>
+      <a class="tool tool-link" id="btn-export" href="/api/export?format=csv"
+         download data-i18n-title="tools.export.why">
+        <span class="tn" data-i18n="btn.export"></span>
+        <span class="td" data-i18n="tools.export.hint"></span>
+        <span class="tool-ctl">⇩</span>
+      </a>
+      <button class="tool" id="btn-settings" data-i18n-title="btn.settings.title">
+        <span class="tn" data-i18n="btn.settings"></span>
+        <span class="td" data-i18n="tools.settings.why"></span>
+      </button>
+
+      <h4 data-i18n="grp.support"></h4>
+      <a class="tool tool-link tool-support" id="btn-thanks" target="_blank"
+         rel="noopener" href="https://venedicus.github.io/drydock/"
+         data-i18n-title="support.title">
+        <span class="heart" aria-hidden="true">♥</span>
+        <span class="tn" data-i18n="support.label"></span>
+        <span class="td" data-i18n="support.why"></span>
+        <span class="tool-ctl support-go" data-i18n="support.go"></span>
+      </a>
+
+      <!-- Уровень удаления выбирается в модалке кнопки; select живёт здесь,
+           чтобы обработчик читал одно и то же место. -->
+      <select id="delete-level" class="hidden" data-i18n-title="del.level.title">
+        <option value="downloaded" selected data-i18n="del.level.downloaded"></option>
+        <option value="archived" data-i18n="del.level.archived"></option>
+        <option value="junk" data-i18n="del.level.junk"></option>
+      </select>
+    </div>
+  </div>
+</div>
+</section>
+
+<div id="selbar" class="selbar">
+  <span id="selinfo" data-i18n="sel.none"></span>
+  <!-- Действие по выбору -- там же, где сам выбор: раньше за ним надо
+       было идти в «Инструменты». -->
+  <button id="btn-download-sel" class="ghost hidden"
+          data-i18n="btn.download"></button>
+  <span class="grow"></span>
+  <label class="check"><input type="checkbox" id="f-ok">
+    <span data-i18n="filter.onlyAvailable"></span></label>
+  <label class="check"><input type="checkbox" id="f-unsaved">
+    <span data-i18n="filter.onlyUnsaved"></span></label>
+  <button id="btn-clear" class="ghost" data-i18n="btn.clear"></button>
+</div>
+
+<main>
+  <section class="pane tree-pane">
+    <div class="pane-head">
+      <input id="search" type="search" data-i18n-ph="search.ph" autocomplete="off">
+      <button id="btn-only-unsaved" class="ghost"
+              data-i18n-title="btn.onlyUnsaved.title"></button>
+      <button id="btn-show-empty" class="ghost"
+              data-i18n-title="tree.showEmpty.title"></button>
+    </div>
+    <div class="legend">
+      <span class="lbl2" data-i18n="legend.dot"></span>
+      <span class="lg"><i class="dot ok"></i><span data-i18n="legend.ok"></span></span>
+      <span class="lg"><i class="dot unavailable"></i><span data-i18n="legend.unavailable"></span></span>
+      <span class="lg"><i class="dot gone"></i><span data-i18n="legend.gone"></span></span>
+      <span class="lg"><i class="dot unchecked"></i><span data-i18n="legend.unchecked"></span></span>
+      <span class="dot stale"></span><span data-i18n="legend.stale"></span>
+      <span class="sep"></span>
+      <span class="lg"><i class="badge saved"></i><span data-i18n="legend.saved"></span></span>
+      <span class="lg"><i class="badge arch"></i><span data-i18n="legend.arch"></span></span>
+      <span class="lg"><i class="badge del"></i><span data-i18n="legend.deleted"></span></span>
+    </div>
+    <div id="tree" class="tree"></div>
+  </section>
+
+  <aside class="pane side">
+    <div id="setup-card" class="card setup hidden"></div>
+    <div id="now-card" class="card now hidden"></div>
+    <div id="next-card" class="card next"></div>
+    <div id="totals-card" class="card"></div>
+    <div id="detail" class="detail empty" data-i18n="detail.empty"></div>
+  </aside>
+</main>
+
+<footer>
+  <div id="jobs" class="jobs"></div>
+</footer>
+
+<!-- Командная палитра: один вход ко всем действиям. Пятнадцать кнопок
+     живут в «Ещё», и чтобы найти нужную, надо вспомнить её группу. -->
+<div id="palette" class="palette hidden" role="dialog" aria-modal="true"
+     aria-label="Ctrl K">
+  <div class="palette-box">
+    <input id="palette-input" type="text" autocomplete="off" spellcheck="false"
+           data-i18n-ph="palette.ph">
+    <div id="palette-list" class="palette-list" role="listbox"></div>
+    <div class="palette-foot" data-i18n="palette.hint"></div>
+  </div>
+</div>
+
+<div id="modal" class="modal hidden" role="dialog" aria-modal="true"
+     aria-labelledby="modal-title">
+  <div class="modal-box" id="modal-box">
+    <div class="modal-head"><span id="modal-title"></span>
+      <button id="modal-close" class="ghost" aria-label="Esc">×</button></div>
+    <div id="modal-body" class="modal-body"></div>
+    <div id="modal-foot" class="modal-foot"></div>
+  </div>
+</div>
+
+<!-- Уведомления вместо alert(): не блокируют окно и не теряют
+     контекст -- видно, что именно произошло. -->
+<div id="toasts" class="toasts" role="status" aria-live="polite"></div>
+
+<script src="i18n.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
