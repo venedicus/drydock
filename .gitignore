@@ -1,0 +1,89 @@
+# ── Python ───────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+*.spec
+.venv/
+venv/
+env/
+.python-version
+
+# ── Тесты, линтеры, типы ─────────────────────────────────────────────
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pyright/
+.tox/
+.nox/
+.hypothesis/
+.coverage
+.coverage.*
+htmlcov/
+
+# ── Данные программы: база, зеркало, логи, ключи ─────────────────────
+*.db
+*.db-shm
+*.db-wal
+*.log
+logs/
+*.part
+*.tmp
+credentials.bin
+settings.json
+secrets/
+files/
+meta/
+archives/
+
+# ── Сборка exe ───────────────────────────────────────────────────────
+*.exe
+*.manifest
+dist/
+
+# ── Редакторы и IDE ──────────────────────────────────────────────────
+.idea/
+.vscode/
+.fleet/
+.zed/
+*.iml
+*.swp
+*.swo
+*~
+
+# ── Агенты и харнессы ────────────────────────────────────────────────
+# Всё это создаётся инструментами вокруг проекта, а не проектом.
+.workbuddy-ai/
+.claude/
+.cursor/
+.cursorrules
+.windsurf/
+.codex/
+.aider*
+.continue/
+.cline/
+.openhands/
+.roo/
+.tabnine/
+.kiro/
+.agents/
+.agent/
+AGENTS.md
+CLAUDE.md
+GEMINI.md
+.copilot/
+*.prompt.md
+
+# ── Node и прочие инструменты ────────────────────────────────────────
+node_modules/
+.next/
+.cache/
+.parcel-cache/
+
+# ── Система ──────────────────────────────────────────────────────────
+Thumbs.db
+desktop.ini
+.DS_Store
+*.lnk

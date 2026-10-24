@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Drydock — поблагодарить автора</title>
+<link rel="icon" href="images/cover.png">
+<style>
+  :root {
+    --bg: #0e1116; --panel: #151a22; --line: #232b36;
+    --fg: #e8ecf1; --dim: #9aa6b6; --accent: #7ea6ff; --ok: #4fb477;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    background-image:
+      radial-gradient(800px 400px at 15% 0%, rgba(91,140,255,.14), transparent 60%),
+      radial-gradient(600px 340px at 95% 100%, rgba(79,180,119,.10), transparent 60%);
+    color: var(--fg); font: 16px/1.55 "Segoe UI", system-ui, sans-serif;
+    min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    padding: 40px 20px;
+  }
+  .wrap { width: min(720px, 100%); }
+  .top { display: flex; align-items: center; gap: 12px; margin-bottom: 26px; }
+  .mark { width: 40px; height: 40px; border-radius: 10px; display: grid;
+          place-items: center; font-weight: 700; font-size: 20px; color: #fff;
+          background: linear-gradient(140deg, #4f8dff, #2f6ad9); }
+  .top a { color: var(--fg); text-decoration: none; font-size: 20px; font-weight: 600; }
+  h1 { font-size: 30px; line-height: 1.2; letter-spacing: -.01em; margin-bottom: 10px; }
+  .lead { color: var(--dim); margin-bottom: 26px; }
+  .card { background: var(--panel); border: 1px solid var(--line);
+          border-radius: 12px; padding: 18px 20px; margin-bottom: 14px; }
+  .card h2 { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+  .card p { color: var(--dim); font-size: 13px; margin-bottom: 12px; }
+  .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  code { font: 13px/1.4 Consolas, monospace; background: #0b0e13;
+         border: 1px solid var(--line); border-radius: 6px;
+         padding: 7px 10px; color: var(--fg); word-break: break-all; }
+  .todo { color: var(--dim); font-size: 13px; font-style: italic; }
+  .btn { display: inline-block; padding: 9px 16px; border-radius: 8px;
+         border: 1px solid #2f6ad9; background: #2f6ad9; color: #fff;
+         text-decoration: none; font-size: 14px; }
+  .btn.ghost { background: none; border-color: var(--line); color: var(--fg); }
+  .btn:hover { filter: brightness(1.08); }
+  footer { color: var(--dim); font-size: 12px; margin-top: 22px; }
+  footer a { color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="top">
+    <div class="mark">D</div>
+    <a href="https://github.com/venedicus/drydock">Drydock</a>
+  </div>
+
+  <h1>Поблагодарить автора</h1>
+  <p class="lead">
+    Drydock бесплатный и без рекламы. Если он помог вытащить файлы —
+    спасибо уже за то, что пользуетесь. А если хочется отблагодарить
+    деньгами, вот реквизиты.
+  </p>
+
+  <div class="card">
+    <h2>Перевод по карте или СБП</h2>
+    <p>Ссылка на платёжную страницу.</p>
+    <div class="row">
+      <span class="todo">ссылка появится позже</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Криптовалюта</h2>
+    <p>Адреса по сетям — сеть важна, иначе перевод не дойдёт.</p>
+    <div class="row"><code>BTC — адрес появится позже</code></div>
+    <div class="row" style="margin-top:8px"><code>USDT (TRC-20) — адрес появится позже</code></div>
+    <div class="row" style="margin-top:8px"><code>TON — адрес появится позже</code></div>
+  </div>
+
+  <div class="card">
+    <h2>Бесплатно и тоже полезно</h2>
+    <p>
+      Поставить звезду на GitHub, рассказать о проекте в своём канале или
+      прислать отчёт о том, где числа разошлись. Для такого проекта это
+      часто важнее денег.
+    </p>
+    <div class="row">
+      <a class="btn" href="https://github.com/venedicus/drydock">Открыть репозиторий</a>
+      <a class="btn ghost" href="https://github.com/venedicus/drydock/issues/new/choose">Сообщить о проблеме</a>
+    </div>
+  </div>
+
+  <footer>
+    Drydock · MIT · не связан с Яндексом. «Яндекс.Диск» — товарный знак
+    правообладателя. <a href="https://github.com/venedicus/drydock#readme">README</a>
+  </footer>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,612 @@
+:root {
+  --bg: #15171c;
+  --bg-2: #1b1e25;
+  --bg-3: #22262f;
+  --line: #30353f;
+  --fg: #e4e7ee;
+  --fg-dim: #949cab;
+  --accent: #5c9ded;
+  --ok: #4fb477;
+  --bad: #d9534f;
+  --warn: #d9a13b;
+  --gone: #8a6ab0;
+
+  /* Семантика поверх палитры: правила ссылаются на неё, а не на цвета.
+     Иначе светлая тема -- это вторая копия всего файла, и любая правка
+     в одной из них забывается в другой. */
+  --primary-bg: var(--primary-bg);
+  --primary-line: var(--primary-line);
+  --primary-fg: var(--primary-fg);
+  --danger-bg: var(--danger-bg);
+  --danger-card: var(--danger-card);
+  --danger-line: var(--danger-line);
+  --danger-fg: var(--danger-fg);
+  --sel-bg: var(--sel-bg);
+  --saved-line: var(--saved-line);
+  --arch-line: var(--arch-line);
+  --hole-line: var(--hole-line);
+  --del-line: var(--del-line);
+  --dot-unchecked: var(--dot-unchecked);
+  --mark-bg: var(--mark-bg);
+  --mark-fg: #ffffff;
+  --bar-del: var(--bar-del);
+  --overlay: rgba(0, 0, 0, .6);
+  --shadow: rgba(0, 0, 0, .45);
+  --next-bg: #1a2433;
+  color-scheme: dark;
+}
+
+/* Светлая тема. Не «инверсия», а свои значения: на белом нужны более
+   тёмные акценты и почти прозрачные рамки, иначе всё сливается. */
+:root[data-theme="light"] {
+  --bg: #f3f5f8;
+  --bg-2: #ffffff;
+  --bg-3: #eaeef4;
+  --line: #d3d9e2;
+  --fg: #1c222c;
+  --fg-dim: #5d6674;
+  --accent: #2f6fd0;
+  --ok: #1c8a4b;
+  --bad: #c0392b;
+  --warn: #9c6a12;
+  --gone: #6b4b96;
+
+  --primary-bg: #2f6fd0;
+  --primary-line: #2a63bb;
+  --primary-fg: #f2f7ff;
+  --danger-bg: #fbe9e7;
+  --danger-card: #fdf4f3;
+  --danger-line: #e2b7b1;
+  --danger-fg: #8c2f22;
+  --sel-bg: #dbe8fa;
+  --saved-line: #a6cfb6;
+  --arch-line: #b4c8e3;
+  --hole-line: #dcc79b;
+  --del-line: #c9b8dd;
+  --dot-unchecked: #9aa2af;
+  --mark-bg: #ffe28a;
+  --mark-fg: #1c222c;
+  --bar-del: #c3c9d3;
+  --overlay: rgba(24, 30, 40, .42);
+  --shadow: rgba(24, 30, 40, .18);
+  --next-bg: #eaf1fc;
+  color-scheme: light;
+}
+
+* { box-sizing: border-box; }
+
+/* Общий «спрятать». Без него элементы с class="hidden" оставались
+   видимыми: правило было только для .modal.hidden, и галочка «начать
+   заново» висела в панели даже когда прерванной описи нет. */
+.hidden { display: none !important; }
+
+body {
+  margin: 0;
+  height: 100vh;
+  display: grid;
+  grid-template-rows: auto auto auto 1fr auto;
+  font: 13px/1.45 "Segoe UI", system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+header {
+  display: flex; align-items: center; gap: 14px;
+  padding: 10px 14px; background: var(--bg-2);
+  border-bottom: 1px solid var(--line);
+}
+.brand { font-weight: 600; font-size: 15px; }
+/* Одна строка состояния: главный ответ на «где я». */
+.summary { color: var(--fg-dim); font-size: 12px; }
+.summary b { color: var(--fg); font-weight: 600; }
+.summary .ok b { color: var(--ok); }
+
+/* Подсказка в панели кнопок: состояние чекпоинта описи. */
+.hint {
+  color: var(--warn); font-size: 12px; align-self: center;
+  max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.dim { color: var(--fg-dim); }
+.chip.bad b { color: var(--bad); }
+.chip.warn b { color: var(--warn); }
+
+/* Линза: меняет все числа разом. */
+.lens { display: inline-flex; gap: 2px; background: var(--bg-3);
+        border: 1px solid var(--line); border-radius: 7px; padding: 2px; }
+.lens button { background: none; border: none; color: var(--fg-dim);
+               padding: 3px 11px; border-radius: 5px; font-size: 12px; }
+.lens button.on { background: var(--bg); color: var(--fg); font-weight: 600; }
+.lens button:hover:not(.on) { color: var(--fg); }
+
+/* Четыре главные действия: число внутри -- это и есть сводка. */
+.acts { display: flex; align-items: stretch; gap: 8px; flex-wrap: wrap;
+        padding: 9px 14px; background: var(--bg-2);
+        border-bottom: 1px solid var(--line); }
+.act { display: flex; flex-direction: column; align-items: flex-start;
+       gap: 1px; min-width: 168px; text-align: left;
+       background: var(--bg-3); border: 1px solid var(--line);
+       border-radius: 8px; padding: 7px 12px; }
+.act .t { font-size: 12px; color: var(--fg-dim); }
+.act .n { font-size: 19px; font-weight: 600; line-height: 1.15; }
+.act .s { font-size: 11px; color: var(--fg-dim); }
+.act.primary { background: var(--primary-bg); border-color: var(--primary-line); }
+.act.primary .t, .act.primary .s { color: var(--primary-fg); }
+.act.danger { background: var(--danger-card); border-color: var(--danger-line); }
+.act.danger .t, .act.danger .s { color: var(--danger-fg); }
+.act:hover:not(:disabled) { border-color: var(--accent); }
+.act:disabled { opacity: .55; }
+
+
+.grow { flex: 1; }
+.sep { width: 1px; height: 20px; background: var(--line); }
+
+.grow { flex: 1; }
+
+button, select, input[type=search], input[type=text], input[type=password] {
+  font: inherit; color: var(--fg); background: var(--bg-3);
+  border: 1px solid var(--line); border-radius: 5px; padding: 5px 10px;
+  cursor: pointer;
+}
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:disabled { opacity: .45; cursor: default; }
+button.primary { background: var(--primary-bg); border-color: var(--primary-line); }
+/* Включённый режим (например, «только нескачанное»): видно, что фильтр активен. */
+button.on { background: var(--primary-bg); border-color: var(--accent); color: var(--primary-fg); }
+button.danger { background: var(--danger-bg); border-color: var(--danger-line); }
+button.ghost { background: none; border-color: transparent; color: var(--fg-dim); }
+input[type=search] { width: 100%; cursor: text; }
+input[type=text], input[type=password] { cursor: text; min-width: 24ch; }.modal-body h4 { margin: 16px 0 6px; font-size: 13px; }
+.modal-body p { margin: 6px 0; }
+.modal-body label { color: var(--fg-dim); }
+.check { display: inline-flex; align-items: center; gap: 5px; cursor: pointer;
+         color: var(--fg-dim); }
+
+main { display: grid; grid-template-columns: 1fr 360px; min-height: 0; }
+.pane { min-height: 0; overflow: auto; }
+.tree-pane { border-right: 1px solid var(--line); display: grid;
+             grid-template-rows: auto auto 1fr; overflow: hidden; }
+.pane-head { padding: 8px 14px; border-bottom: 1px solid var(--line);
+             background: var(--bg-2);
+             /* Поиск и переключатель режима в одну строку: без flex
+                кнопка уезжала под поле ввода (оно 100% ширины) и её
+                просто не было видно. */
+             display: flex; gap: 8px; align-items: center; }
+.pane-head input[type=search] { flex: 1; width: auto; min-width: 0; }
+.pane-head button { white-space: nowrap; }
+/* Легенда под поиском: что означают точка и значки. Без неё цвета
+   объяснялись только подсказками при наведении. */
+.legend { display: flex; align-items: center; gap: 5px; flex-wrap: wrap;
+          padding: 5px 14px; font-size: 11px; color: var(--fg-dim);
+          background: var(--bg-2); border-bottom: 1px solid var(--line); }
+.legend .lbl2 { color: var(--fg-dim); }
+.legend .lg { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
+.legend .dot { width: 7px; height: 7px; border-radius: 50%; }
+.legend .badge { padding: 0 4px; font-size: 10px; border: 1px solid var(--line);
+                 border-radius: 7px; min-width: 8px; height: 12px; }
+.legend .badge.saved { border-color: var(--saved-line); }
+.legend .badge.arch { border-color: var(--arch-line); }
+.legend .badge.del { border-color: var(--del-line); }
+.tree { overflow: auto; padding: 6px 0 20px; }
+
+/* Правая колонка: карточки «Сейчас», «Что дальше», «Итоги» и файл. */
+.side { display: flex; flex-direction: column; gap: 8px; padding: 10px;
+        background: var(--bg); }
+.card { background: var(--bg-2); border: 1px solid var(--line);
+        border-radius: 8px; padding: 10px 12px; }
+.card.now { border-color: var(--arch-line); }
+.card.next { border-color: var(--primary-bg); background: var(--next-bg); }
+.card h4 { margin: 0 0 6px; font-size: 12px; color: var(--fg-dim);
+           font-weight: 500; display: flex; align-items: center; gap: 6px; }
+.card.next .lead { font-size: 13px; font-weight: 600; margin: 2px 0 4px; }
+.card.next .why { font-size: 12px; color: var(--fg-dim); margin-bottom: 8px; }
+.card .row2 { display: flex; align-items: center; gap: 8px; }
+.now .bar { flex: 1; height: 6px; background: var(--bg-3); border-radius: 3px;
+            overflow: hidden; }
+.now .bar > i { display: block; height: 100%; background: var(--accent); }
+.now.failed .bar > i { background: var(--bad); }
+.now.done .bar > i { background: var(--ok); }
+.tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.tile { background: var(--bg-3); border-radius: 6px; padding: 6px 9px; }
+.tile .n { font-size: 16px; font-weight: 600; }
+.tile .l { font-size: 11px; color: var(--fg-dim); }
+.tile.ok .n { color: var(--ok); }
+.tile.bad .n { color: var(--bad); }
+.tile.warn .n { color: var(--warn); }
+.tiles-foot { margin-top: 8px; font-size: 11px; color: var(--fg-dim);
+              display: flex; flex-direction: column; gap: 3px; }
+.tiles-foot .path { font-family: Consolas, monospace; word-break: break-all;
+                    color: var(--accent); cursor: pointer; }
+/* «Осталось взять»: одно число плюс разбивка по состоянию облака. */
+.left { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--line);
+        font-size: 11px; color: var(--fg-dim); }
+.left-head { font-size: 12px; color: var(--fg); margin-bottom: 4px; }
+.left-head b { font-weight: 600; }
+.left-row { display: flex; justify-content: space-between; gap: 8px; padding: 1px 0; }
+.left-row.now { color: var(--fg); }
+.left-row.warn span:last-child { color: var(--warn); }
+.left-row.bad span:last-child { color: var(--fg-dim); }
+
+.node { display: flex; align-items: center; gap: 6px; padding: 2px 14px 2px 0;
+        white-space: nowrap; }
+.node:hover { background: var(--bg-2); }
+.node.sel { background: var(--sel-bg); }
+.twisty { width: 16px; text-align: center; color: var(--fg-dim); cursor: pointer;
+          user-select: none; }
+.twisty.leaf { visibility: hidden; }
+.name { overflow: hidden; text-overflow: ellipsis; }
+.node .meta { margin-left: auto; display: flex; gap: 8px; color: var(--fg-dim);
+              font-size: 11px; align-items: center; }
+.dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+.dot.ok { background: var(--ok); }
+.dot.unavailable { background: var(--bad); }
+.dot.gone { background: var(--gone); }
+.dot.unchecked { background: var(--dot-unchecked); }
+.dot.api_error, .dot.unknown { background: var(--warn); }
+.badge { padding: 0 5px; border-radius: 8px; background: var(--bg-3);
+         border: 1px solid var(--line); font-size: 10px; }
+.badge.saved { color: var(--ok); border-color: var(--saved-line); }
+.badge.arch { color: var(--accent); border-color: var(--arch-line); }
+.badge.hole { color: var(--warn); border-color: var(--hole-line); }
+.badge.del  { color: var(--gone); border-color: var(--del-line); }
+
+.detail { padding: 14px; }
+.detail.empty { color: var(--fg-dim); }
+.detail h3 { margin: 0 0 10px; font-size: 14px; word-break: break-word; }
+.detail img { width: 100%; border-radius: 6px; border: 1px solid var(--line);
+              background: var(--bg-3); margin-bottom: 10px; }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px;
+      font-size: 12px; }
+.kv dt { color: var(--fg-dim); }
+.kv dd { margin: 0; word-break: break-all; }
+
+footer { border-top: 1px solid var(--line); background: var(--bg-2);
+         max-height: 150px; overflow: auto; }
+.jobs { padding: 6px 14px; display: flex; flex-direction: column; gap: 4px; }
+.job { display: flex; align-items: center; gap: 10px; font-size: 12px; }
+.job .bar { flex: 1; height: 6px; background: var(--bg-3); border-radius: 3px;
+            overflow: hidden; }
+.job .bar > i { display: block; height: 100%; background: var(--accent); }
+.job.done .bar > i { background: var(--ok); }
+.job.failed .bar > i { background: var(--bad); }
+/* «Готово с ошибками»: часть работы не сделана -- зелёным это быть не должно. */
+.job.partial .bar > i { background: var(--warn); }
+.job.partial .bar > i { width: 100% !important; }
+/* Прогресс неизвестен (у описи нет общего числа): бегущая полоса вместо
+   выдуманных 15%, которые ничего не значили. */
+.job.indet .bar > i {
+  width: 35% !important;
+  animation: indet 1.2s ease-in-out infinite;
+}
+@keyframes indet {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
+}
+.job .msg { color: var(--fg-dim); max-width: 46ch; overflow: hidden;
+            text-overflow: ellipsis; white-space: nowrap; }
+
+.modal { position: fixed; inset: 0; background: var(--overlay);
+         display: grid; place-items: center; z-index: 10; }
+.modal.hidden { display: none; }
+.modal-box { width: min(760px, 92vw); max-height: 84vh; background: var(--bg-2);
+             border: 1px solid var(--line); border-radius: 8px;
+             display: grid; grid-template-rows: auto 1fr auto; }
+.modal-head { display: flex; align-items: center; padding: 10px 14px;
+              border-bottom: 1px solid var(--line); font-weight: 600; }
+.modal-head button { margin-left: auto; font-size: 18px; line-height: 1; }
+.modal-body { padding: 14px; overflow: auto; }
+.modal-foot { padding: 10px 14px; border-top: 1px solid var(--line);
+              display: flex; gap: 8px; justify-content: flex-end; }
+.warnbox { background: var(--danger-card); border: 1px solid var(--danger-line); border-radius: 6px;
+           padding: 10px 12px; margin-bottom: 12px; }
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+th, td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--line); }
+th { color: var(--fg-dim); font-weight: 500; }
+code { background: var(--bg-3); padding: 1px 4px; border-radius: 3px; }
+.mono { font-family: Consolas, monospace; font-size: 11px; }
+
+/* Устаревшее наблюдение: точка гаснет, чтобы "доступно" вчерашней
+   давности не читалось как сегодняшнее состояние. */
+.dot.stale { opacity: .35; box-shadow: 0 0 0 1px var(--line); }
+
+/* Куда идут спасённые файлы -- первое, что спрашивают. Пусть будет видно
+   и открывается щелчком. */
+.chip.path { cursor: pointer; border-color: var(--arch-line); }
+.chip.path:hover { border-color: var(--accent); }
+.chip.path b { font-weight: 400; font-family: Consolas, monospace; }
+
+/* Остановка в процессе: строка гаснет, чтобы нажатие было видно сразу. */
+.job.stopping { opacity: .6; }
+.job.stopping .bar > i { background: var(--warn); }
+
+/* Узлы и кластеры: строка в итогах -- вход в модалку. */
+.hosts-link { cursor: pointer; text-decoration: underline dotted; }
+.hosts-link:hover { color: var(--accent); }
+
+/* Карточка «Сейчас»: несколько задач строками. */
+.now-row { padding: 5px 0; border-top: 1px solid var(--line); }
+.now-row:first-of-type { border-top: none; padding-top: 2px; }
+.now-row .nm { font-size: 12px; white-space: nowrap; }
+.now-row .msg { font-size: 11px; overflow: hidden; text-overflow: ellipsis;
+                white-space: nowrap; margin-top: 2px; }
+.now-row .bar.indet > i { width: 35% !important; animation: indet 1.2s ease-in-out infinite; }
+
+/* Завершённые: без номеров, с шапкой и «скрыть». */
+.jobs-head { display: flex; align-items: center; gap: 8px; font-size: 11px;
+             padding: 2px 0 4px; }
+.jobs-head button { padding: 1px 8px; font-size: 11px; }
+.job .nm { width: 9em; white-space: nowrap; overflow: hidden;
+           text-overflow: ellipsis; }
+.job .st { width: 10em; white-space: nowrap; }
+
+/* Карточка считает по выбору, а не по всей коллекции. */
+.act.scoped { border-color: var(--accent); }
+.act { position: relative; }
+
+/* ── уведомления вместо alert() ───────────────────────────────────────
+   alert() блокирует окно и не оставляет следа: пропустил строку -- и не
+   знаешь, что произошло. Тосты копятся справа внизу, гаснут сами, ошибку
+   можно закрыть кликом. */
+.toasts { position: fixed; right: 14px; bottom: var(--footer-h, 52px); z-index: 80;
+          display: flex; flex-direction: column; gap: 6px;
+          max-width: min(460px, 60vw); pointer-events: none; }
+.toast { pointer-events: auto; display: flex; align-items: flex-start; gap: 8px;
+         padding: 8px 12px; border-radius: 7px; font-size: 12px;
+         background: var(--bg-3); border: 1px solid var(--line);
+         border-left: 3px solid var(--accent); color: var(--fg);
+         box-shadow: 0 6px 22px var(--shadow); cursor: pointer;
+         animation: toastIn .16s ease-out; }
+.toast.ok { border-left-color: var(--ok); }
+.toast.err { border-left-color: var(--bad); }
+.toast.warn { border-left-color: var(--warn); }
+.toast .txt { flex: 1; word-break: break-word; }
+@keyframes toastIn { from { opacity: 0; transform: translateY(6px); }
+                     to { opacity: 1; transform: none; } }
+
+/* ── клавиатура и доступность ──────────────────────────────────────── */
+button:focus-visible, input:focus-visible, select:focus-visible,
+summary:focus-visible, .node:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 1px;
+}
+/* Строка дерева в фокусе: видно, где находишься, если идёшь стрелками. */
+.node:focus { background: var(--sel-bg); outline: none; }
+.node:focus-visible { background: var(--sel-bg); }
+.help { font-size: 12px; width: 24px; height: 24px; padding: 0;
+        border-radius: 50%; color: var(--fg-dim); }
+
+/* Совпадение в результатах поиска. */
+mark { background: var(--mark-bg); color: var(--mark-fg); border-radius: 2px; padding: 0 1px; }
+
+/* Пустая карточка подробностей не занимает место: подсказка о том, что
+   клик по файлу что-то показывает, уже есть в подсказках дерева. */
+.detail.empty { display: none; }
+
+/* Свёрнутый подвал: одна строка вместо шести полос. */
+.jobs-head .grow { flex: 1; }
+.jobs-head .ok { color: var(--ok); }
+.jobs-head .bad { color: var(--bad); }
+.jobs-head .tw { color: var(--fg-dim); width: 12px; }
+
+/* ── адаптив: узкое окно не должно давиться ────────────────────────── */
+@media (max-width: 1180px) {
+  main { grid-template-columns: 1fr 300px; }
+  .act { min-width: 148px; }
+  .summary { font-size: 11px; }
+}
+@media (max-width: 980px) {
+  main { grid-template-columns: 1fr; }
+  .side { border-top: 1px solid var(--line); max-height: 42vh; }
+  .tree-pane { border-right: none; }
+  .act { min-width: 132px; padding: 6px 10px; }
+  .act .n { font-size: 16px; }
+  .legend { display: none; }
+}
+
+/* Справка по клавишам. */
+.keys { width: 100%; border-collapse: collapse; font-size: 12px; }
+.keys td { padding: 4px 8px; border-bottom: 1px solid var(--line); }
+.keys td:first-child { width: 6.5em; }
+kbd { font: 11px/1.4 Consolas, monospace; background: var(--bg-3);
+      border: 1px solid var(--line); border-bottom-width: 2px;
+      border-radius: 4px; padding: 1px 6px; color: var(--fg); }
+
+/* ── командная палитра ─────────────────────────────────────────────── */
+.kbd-btn { font: 11px/1 Consolas, monospace; color: var(--fg-dim);
+           padding: 4px 7px; border-radius: 5px; }
+.palette { position: fixed; inset: 0; background: var(--overlay);
+           display: flex; justify-content: center; align-items: flex-start;
+           padding-top: 12vh; z-index: 90; }
+.palette-box { width: min(640px, 92vw); background: var(--bg-2);
+               border: 1px solid var(--line); border-radius: 10px;
+               box-shadow: 0 18px 60px var(--overlay); overflow: hidden; }
+#palette-input { width: 100%; border: none; border-bottom: 1px solid var(--line);
+                 border-radius: 0; background: var(--bg-2); font-size: 15px;
+                 padding: 14px 16px; }
+#palette-input:focus { outline: none; }
+.palette-list { max-height: 52vh; overflow: auto; padding: 4px; }
+.p-item { display: flex; align-items: center; gap: 10px; padding: 7px 10px;
+          border-radius: 6px; cursor: pointer; font-size: 13px; }
+.p-item .hint { margin-left: auto; font-size: 11px; color: var(--fg-dim);
+                max-width: none; }
+.p-item.on { background: var(--primary-bg); }
+.p-item.on .hint { color: var(--primary-fg); }
+.p-item .g { font-size: 11px; color: var(--fg-dim); }
+.p-item.on .g { color: var(--primary-fg); }
+.palette-empty { padding: 18px; text-align: center; color: var(--fg-dim);
+                 font-size: 12px; }
+.palette-foot { padding: 6px 12px; border-top: 1px solid var(--line);
+                font-size: 11px; color: var(--fg-dim); }
+
+/* ── здоровье ──────────────────────────────────────────────────────── */
+.modal-box.wide { width: min(980px, 94vw); }
+.h-kpi { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.h-kpi .k { background: var(--bg-3); border: 1px solid var(--line);
+            border-radius: 8px; padding: 8px 11px; }
+.h-kpi .k .n { font-size: 20px; font-weight: 600; line-height: 1.15; }
+.h-kpi .k .l { font-size: 11px; color: var(--fg-dim); }
+.h-kpi .k.good .n { color: var(--ok); }
+.h-kpi .k.bad .n { color: var(--bad); }
+.h-chart { display: flex; align-items: flex-end; gap: 6px; height: 120px;
+           margin-top: 10px; padding-top: 6px; }
+.h-col { flex: 1; display: flex; flex-direction: column; align-items: center;
+         gap: 3px; height: 100%; justify-content: flex-end; }
+.h-col .bars { display: flex; align-items: flex-end; gap: 2px; height: 100%;
+               width: 100%; justify-content: center; }
+.h-col .b { width: 42%; border-radius: 2px 2px 0 0; min-height: 1px;
+            background: var(--ok); }
+.h-col .b.del { background: var(--bar-del); }
+.h-col .cap { font-size: 10px; color: var(--fg-dim); }
+.h-col .val { font-size: 10px; color: var(--fg-dim); }
+.h-legend { display: flex; gap: 14px; font-size: 11px; color: var(--fg-dim);
+            margin-top: 4px; }
+.h-legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px;
+              margin-right: 4px; }
+.h-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 14px; }
+.h-row { display: flex; align-items: center; gap: 8px; font-size: 12px;
+         padding: 3px 0; }
+.h-row .lbl { min-width: 0; overflow: hidden; text-overflow: ellipsis;
+              white-space: nowrap; }
+.h-row .bar2 { flex: 1; height: 5px; background: var(--bg-3); border-radius: 3px;
+               min-width: 40px; }
+.h-row .bar2 > i { display: block; height: 100%; border-radius: 3px;
+                   background: var(--bad); }
+.h-row .n { color: var(--fg-dim); font-variant-numeric: tabular-nums; }
+.h-note { font-size: 11px; color: var(--fg-dim); margin-top: 12px; }
+.h-jobs { font-size: 12px; margin-top: 6px; }
+.h-jobs .bad { color: var(--bad); }
+@media (max-width: 760px) { .h-cols { grid-template-columns: 1fr; }
+                            .h-kpi { grid-template-columns: repeat(2, 1fr); } }
+
+/* ── переключатель темы ────────────────────────────────────────────── */
+.theme-btn { font-size: 13px; width: 26px; height: 24px; padding: 0;
+             border-radius: 6px; color: var(--fg-dim); }
+
+/* ── чеклист первого запуска ───────────────────────────────────────── */
+.card.setup { border-color: var(--accent); }
+.card.setup h4 { display: flex; align-items: center; gap: 8px; }
+.card.setup h4 .n { font-weight: 400; color: var(--fg-dim); font-size: 11px; }
+.setup-close { margin-left: auto; font-size: 15px; line-height: 1; padding: 0 4px; }
+.step { display: flex; align-items: flex-start; gap: 8px; padding: 7px 0;
+        border-top: 1px solid var(--line); }
+.step:first-of-type { border-top: none; }
+.step .mark2 { width: 16px; height: 16px; border-radius: 50%; flex: none;
+               display: grid; place-items: center; font-size: 10px;
+               border: 1px solid var(--line); color: var(--fg-dim);
+               margin-top: 1px; }
+.step.done .mark2 { background: var(--ok); border-color: var(--ok);
+                    color: #fff; }
+.step.now .mark2 { border-color: var(--accent); color: var(--accent); }
+.step .txt { flex: 1; min-width: 0; }
+.step .t { font-size: 12px; }
+.step.done .t { color: var(--fg-dim); }
+.step .w { font-size: 11px; color: var(--fg-dim); margin-top: 1px; }
+.step button { padding: 2px 9px; font-size: 11px; align-self: center; }
+
+/* ── аккаунт в шапке ───────────────────────────────────────────────── */
+.auth-btn { display: inline-flex; align-items: center; gap: 6px;
+            font-size: 12px; padding: 4px 10px; border-radius: 14px;
+            background: var(--bg-3); border: 1px solid var(--line);
+            color: var(--fg); max-width: 220px; }
+.auth-btn:hover:not(:disabled) { border-color: var(--accent); }
+.auth-btn #auth-label { overflow: hidden; text-overflow: ellipsis;
+                        white-space: nowrap; }
+.auth-btn.bad { border-color: var(--danger-line); color: var(--danger-fg);
+                background: var(--danger-card); }
+.dot2 { width: 7px; height: 7px; border-radius: 50%; flex: none;
+        background: var(--fg-dim); display: inline-block; }
+.dot2.ok { background: var(--ok); }
+.dot2.bad { background: var(--bad); }
+.dot2.warn { background: var(--warn); }
+
+/* Блок аккаунта в модалке входа. */
+.acc { display: flex; align-items: center; gap: 12px; padding: 10px 12px;
+       background: var(--bg-3); border: 1px solid var(--line);
+       border-radius: 8px; margin-bottom: 12px; }
+.acc .who { flex: 1; min-width: 0; }
+.acc .who .lg { font-size: 14px; font-weight: 600; }
+.acc .who .nm { font-size: 12px; color: var(--fg-dim); }
+.acc .who .when { font-size: 11px; color: var(--fg-dim); margin-top: 2px; }
+.acc .space { min-width: 150px; font-size: 11px; color: var(--fg-dim); }
+.acc .space .bar3 { height: 6px; background: var(--bg-2); border-radius: 3px;
+                    margin-top: 4px; overflow: hidden;
+                    border: 1px solid var(--line); }
+.acc .space .bar3 > i { display: block; height: 100%; background: var(--accent);
+                        min-width: 2px; }
+.acc .space .bar3 > i.full { background: var(--bad); }
+
+/* ── инструменты: окно с секциями ──────────────────────────────────── */
+.tools-btn { align-self: flex-start; margin-top: 2px; padding: 6px 12px;
+             border: 1px solid var(--line); background: var(--bg-3);
+             color: var(--fg-dim); font-size: 12px; border-radius: 8px; }
+.tools-box { width: min(720px, 94vw); }
+.tools-hint { margin: 0 0 10px; font-size: 12px; }
+.tool { display: flex; align-items: center; gap: 12px; width: 100%;
+        text-align: left; padding: 8px 10px; border-radius: 7px;
+        background: none; border: 1px solid transparent; color: var(--fg);
+        font: inherit; cursor: pointer; }
+.tool:hover:not(:disabled) { background: var(--bg-3); border-color: var(--line); }
+.tool:disabled { opacity: .45; cursor: default; }
+.tool .tn { min-width: 170px; max-width: 240px; font-size: 13px; }
+.tool .td { flex: 1; min-width: 150px; font-size: 11px; color: var(--fg-dim); }
+.tool .tool-ctl { display: flex; align-items: center; gap: 6px; }
+.tool .tool-ctl select { font-size: 12px; padding: 3px 6px; }
+.tool .tool-ctl button { font-size: 12px; padding: 3px 10px; }
+.tool-note { font-size: 11px; color: var(--warn); padding: 0 10px 6px; }
+.switch input { width: 16px; height: 16px; cursor: pointer; }
+
+/* ── поповер «Вид» ─────────────────────────────────────────────────── */
+.view-pop { position: absolute; right: 12px; top: 46px; z-index: 70;
+            width: 260px; padding: 10px 12px; border-radius: 9px;
+            background: var(--bg-2); border: 1px solid var(--line);
+            box-shadow: 0 10px 34px var(--shadow); }
+.vp-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; }
+.vp-l { font-size: 11px; color: var(--fg-dim); width: 72px; }
+.vp-btns { display: flex; gap: 3px; flex-wrap: wrap; }
+.vp-btns button { font-size: 11px; padding: 3px 8px; border-radius: 5px; }
+.vp-btns button.on { background: var(--primary-bg); border-color: var(--primary-line);
+                     color: var(--primary-fg); }
+.vp-note { font-size: 10px; color: var(--fg-dim); margin-top: 6px; }
+
+/* Компактная плотность: те же элементы, меньше воздуха. */
+body.dense .act { padding: 5px 9px; min-width: 150px; }
+body.dense .act .n { font-size: 16px; }
+body.dense .node { padding-top: 1px; padding-bottom: 1px; }
+body.dense .card { padding: 8px 10px; }
+body.dense .tool { padding: 5px 8px; }
+
+/* Итог архивации: arch.plan приходит готовым абзацем. */
+.arch-row { display: flex; align-items: center; gap: 10px; padding: 4px 0; }
+.arch-row label { width: 110px; color: var(--fg-dim); font-size: 12px; }
+.arch-row select { flex: 1; max-width: 320px; }
+.arch-summary { margin: 10px 0 6px; font-size: 13px; }
+.arch-summary p { margin: 0; }
+
+/* ── выбор языка: глобус + код, чтобы нашёлся в чужом интерфейсе ───── */
+.lang-wrap { position: relative; display: inline-flex; }
+.lang-btn { display: inline-flex; align-items: center; gap: 5px;
+            padding: 3px 8px; border: 1px solid var(--line);
+            border-radius: 7px; font-size: 12px; color: var(--fg-dim);
+            background: var(--bg-3); }
+.lang-ico { font-size: 13px; line-height: 1; }
+#lang-code { font: 11px/1 Consolas, monospace; letter-spacing: .02em; }
+.lang-pop { right: 0; top: 32px; width: 224px; padding: 6px; }
+.lang-row { display: flex; align-items: center; gap: 8px; width: 100%;
+            padding: 5px 8px; border-radius: 6px; background: none;
+            border: 1px solid transparent; color: var(--fg); font: inherit;
+            font-size: 12px; cursor: pointer; text-align: left; }
+.lang-row:hover { background: var(--bg-3); }
+.lang-row.on { border-color: var(--accent); }
+.lr-n { flex: 1; }
+.lr-c { font: 10px/1 Consolas, monospace; color: var(--fg-dim); }
+.lang-row.on .lr-c { color: var(--accent); }
+
+/* Подпись над линзами: «Состояние:» -- чтобы три слова читались как выбор. */
+.lens-lbl { font-size: 11px; color: var(--fg-dim); padding: 0 6px 0 4px;
+            align-self: center; white-space: nowrap; }
+
+/* «Инструменты» занимает остаток строки: там всё, что не влезло в четыре. */
+.tools-act { flex: 1 1 320px; justify-content: center; gap: 2px;
+             border-style: dashed; }
+.tools-act .s { line-height: 1.35; }
+.tool-link { text-decoration: none; color: var(--fg); }
+.tool-link .tool-ctl { color: var(--fg-dim); font-size: 14px; }
+.tool-link:hover { background: var(--bg-3); border-color: var(--line); }
