@@ -194,8 +194,37 @@ def main() -> int:
     assert probe and probe["state"] == "gone", dict(probe or {})
     print("404 при удалении: «уже нет» записано, в ошибки не пошло")
 
+    # ── уровень «выбранное» ─────────────────────────────────────────
+    # Человек сам отметил файлы: берём и неспасённые тоже, кроме тех,
+    # которых в облаке уже нет.
+    sel_saved = "disk:/sel/saved.bin"
+    sel_unsaved = "disk:/sel/unsaved.bin"
+    sel_gone = "disk:/sel/gone.bin"
+    make(conn, sel_saved, verify="ok")
+    db.upsert_resource(conn, {"path": sel_unsaved, "name": "unsaved.bin",
+                              "type": "file", "size": 50})
+    probe_only(sel_unsaved, "ok")
+    db.upsert_resource(conn, {"path": sel_gone, "name": "gone.bin",
+                              "type": "file", "size": 50})
+    probe_only(sel_gone, "gone")
+
+    ok_sel, blocked_sel = cloud.eligible(
+        conn, [sel_saved, sel_unsaved, sel_gone], level="selected")
+    assert {r["path"] for r in ok_sel} == {sel_saved, sel_unsaved}, ok_sel
+    assert [b["path"] for b in blocked_sel] == [sel_gone], blocked_sel
+    print("выборочное удаление: берёт и неспасённое, кроме отсутствующего в облаке")
+
     print("\nудаление из облака: все проверки прошли")
     return 0
+
+
+def test_cloud_delete() -> None:
+    """Весь прогон целиком: pytest собирает его как один тест.
+
+    До этой обёртки файл был скриптом и в CI не запускался вовсе -- а
+    проверяет он самое необратимое, что есть в программе.
+    """
+    assert main() == 0
 
 
 if __name__ == "__main__":

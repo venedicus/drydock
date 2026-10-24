@@ -254,7 +254,7 @@ let selPlan = null;
 // каждого файла; «На диске» -- что спасено. Раньше строка папки
 // показывала исторический размер, и папка, от которой в облаке ничего не
 // осталось, выглядела полной.
-const LENSES = ["now", "was", "disk"];
+const LENSES = ["now", "disk", "was"];
 let LENS = localStorage.getItem("cr-lens") || "now";
 // Ссылку можно дать прямо адресом: ?lens=was -- открыть в линзе «Было».
 const lensParam = new URLSearchParams(location.search).get("lens");
@@ -1960,8 +1960,10 @@ async function cloudDeleteFlow(level) {
     `<div class="warnbox">${t("del.warn")}</div>`
     + (level === "downloaded"
        ? `<div class="warnbox">${t("del.oneCopy")}</div>` : "")
-    + (level === "junk"
-       ? `<div class="warnbox">${t("del.junkWarn")}</div>` : "")
+    + (level === "selected" && pre.unsaved
+       ? `<div class="warnbox">${t("del.selectedWarn", {
+           n: pre.unsaved, files: t("n.files", { n: pre.unsaved }) })}</div>`
+       : "")
     + t("del.fits", { n: pre.allowed, files: t("n.files", { n: pre.allowed }), size: human(pre.allowed_bytes) })
     + t("del.blocked", { n: pre.blocked })
     + (reasons ? `<table><tr><th>${t("del.pcsCol")}</th>
@@ -1973,9 +1975,12 @@ async function cloudDeleteFlow(level) {
      ...(pre.allowed > 0 ? [{
        label: t("del.go", { n: pre.allowed }), cls: "danger",
        onClick: async () => {
-         const ask = level === "junk"
-           ? t("del.junkConfirm", { n: pre.allowed, files: t("n.files", { n: pre.allowed }) })
-           : t("del.confirm", { n: pre.allowed, files: t("n.files", { n: pre.allowed }) });
+         const ask = level === "selected"
+           ? t("del.confirmSelected", { n: pre.allowed,
+               files: t("n.files", { n: pre.allowed }),
+               unsaved: pre.unsaved || 0 })
+           : t("del.confirm", { n: pre.allowed,
+               files: t("n.files", { n: pre.allowed }) });
          // Спрашиваем поверх уже открытого окна предпросмотра: своё окно
          // заменяет его и возвращает ответ, после чего закрываем.
          if (!await confirmModal(t("dlg.title"), ask,
@@ -1988,22 +1993,34 @@ async function cloudDeleteFlow(level) {
      }] : [])]);
 }
 
-wrap($("btn-cloud-delete"), () => {
+// Окно выбора уровня -- отдельной функцией: его открывает кнопка, а
+// проверка интерфейса зовёт напрямую, без данных в дереве.
+function cloudDeleteChoose() {
+  // «Выбранное» показываем только когда выбор есть: без него это была бы
+  // команда «удалить всё».
+  const hasSel = !!(sel.files.size || sel.folders.size);
   const levels = [
+    ...(hasSel
+      ? [["selected", "del.level.selected", "del.level.selected.why"]]
+      : []),
     ["downloaded", "del.level.downloaded", "del.level.downloaded.why"],
     ["archived", "del.level.archived", "del.level.archived.why"],
-    ["junk", "del.level.junk", "del.level.junk.why"],
   ];
   modal(t("del.choose"),
     `<p class="dim">${t("del.chooseWhy")}</p>`
     + levels.map(([v, k, why]) => `<div class="lvl">
          <b>${t(k)}</b><div class="dim">${t(why)}</div></div>`).join(""),
     [...levels.map(([v, k]) => ({
-        label: t(k), cls: v === "junk" ? "danger" : "",
+        label: t(k),
+        // Безопасный уровень -- основной; выборочное удаление заметно,
+        // но не спорит с ним за внимание.
+        cls: v === "downloaded" ? "primary" : v === "selected" ? "accent" : "",
         onClick: () => { closeModal(); cloudDeleteFlow(v); },
       })),
      { label: t("btn.cancel"), cls: "ghost", onClick: closeModal }]);
-});
+}
+
+wrap($("btn-cloud-delete"), cloudDeleteChoose);
 
 // ── доступ к Диску ──────────────────────────────────────────────────
 //

@@ -71,5 +71,10 @@ def main() -> int:
     return 0
 
 
+def test_reveal() -> None:
+    """Обёртка для pytest: файл писался как скрипт и не собирался."""
+    assert main() == 0
+
+
 if __name__ == "__main__":
     raise SystemExit(main())
