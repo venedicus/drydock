@@ -1,0 +1,21 @@
+# Drydock
+
+> Rescues files from a failing Yandex.Disk: inventories the collection,
+> probes availability without downloading, downloads what is still served,
+> verifies hashes, packs into 7z volumes, deletes from the cloud by
+> strictness level. Windows, Python 3.12+.
+
+## Docs
+
+- [README](https://github.com/venedicus/drydock#readme): what it does, quick start
+- [How it works](https://github.com/venedicus/drydock/blob/main/docs/how-it-works.md): inventory, probe, download, verification, loop, archive, delete
+- [Limitations](https://github.com/venedicus/drydock/blob/main/docs/limitations.md): what it does not do and why
+- [Comparison](https://github.com/venedicus/drydock/blob/main/docs/comparison.md): Drydock vs a sync client vs rclone
+- [Security](https://github.com/venedicus/drydock/blob/main/SECURITY.md): token storage, what to report
+- [Contributing](https://github.com/venedicus/drydock/blob/main/CONTRIBUTING.md): setup, tests, translation rules
+- [Changelog](https://github.com/venedicus/drydock/blob/main/CHANGELOG.md)
+
+## Optional
+
+- [English README](https://github.com/venedicus/drydock/blob/main/docs/README.en.md)
+- [Interface screenshots](https://github.com/venedicus/drydock/tree/main/docs/images)

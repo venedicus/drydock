@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Тесты и линтеры
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Данные программы: база, зеркало, логи, ключи
+*.db
+*.db-shm
+*.db-wal
+*.log
+logs/
+*.part
+*.tmp
+credentials.bin
+settings.json
+secrets/
+
+# Сборка
+build/
+dist/
+*.spec
+
+# Рабочие файлы
+.workbuddy-ai/
+.idea/
+.vscode/
+Thumbs.db
+.DS_Store
