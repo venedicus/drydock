@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    # Программа работает только на Windows: хранилище ключей -- DPAPI.
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13"]
+    env:
+      # Консоль раннера не UTF-8: без этого кириллица в выводе и в
+      # дочерних процессах падает с UnicodeEncodeError.
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: "utf-8"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+
+      - name: Установка
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Линтер
+        run: python -m ruff check drydock tests tools
+
+      - name: Словари не разошлись с кодом
+        run: python tools/make_i18n.py --check
+
+      - name: Ключи переводов
+        run: python tools/check_keys.py
+
+      - name: Тесты
+        run: python -m pytest -q
+
+  exe:
+    # Сборка одного файла проверяется на каждый push: сломанная сборка
+    # должна находиться здесь, а не в день релиза.
+    runs-on: windows-latest
+    needs: test
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: "utf-8"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Установка
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]" pyinstaller
+
+      - name: Сборка
+        run: python tools/build_exe.py
+
+      - name: Запуск и проверка
+        run: python tools/check_exe.py
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Drydock-exe
+          path: dist/Drydock.exe
+          if-no-files-found: error

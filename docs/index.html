@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Drydock — поблагодарить автора</title>
+<meta name="description" content="Drydock спасает файлы с Яндекс.Диска, когда облако перестаёт их отдавать. Страница благодарности и реквизиты.">
+<link rel="icon" href="images/cover.png">
+<style>
+  :root {
+    --bg: #0e1116; --panel: #151a22; --panel2: #12161d; --line: #232b36;
+    --fg: #e8ecf1; --dim: #9aa6b6; --accent: #7ea6ff; --ok: #4fb477;
+    --warn: #d9a13b;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    background-image:
+      radial-gradient(900px 420px at 12% 0%, rgba(91,140,255,.15), transparent 62%),
+      radial-gradient(700px 380px at 95% 100%, rgba(79,180,119,.10), transparent 62%);
+    color: var(--fg); font: 16px/1.55 "Segoe UI", system-ui, sans-serif;
+    min-height: 100vh; padding: 28px 20px 60px;
+  }
+  .wrap { width: min(860px, 100%); margin: 0 auto; }
+
+  header { display: flex; align-items: center; gap: 12px; margin-bottom: 34px; }
+  .mark { width: 40px; height: 40px; border-radius: 10px; display: grid;
+          place-items: center; font-weight: 700; font-size: 20px; color: #fff;
+          background: linear-gradient(140deg, #4f8dff, #2f6ad9);
+          box-shadow: 0 8px 22px rgba(79,141,255,.3); }
+  .name { font-size: 20px; font-weight: 600; text-decoration: none; color: var(--fg); }
+  .spacer { flex: 1; }
+  .langs { display: flex; gap: 4px; }
+  .langs button { font: inherit; font-size: 12px; padding: 4px 10px;
+                  border-radius: 6px; border: 1px solid var(--line);
+                  background: none; color: var(--dim); cursor: pointer; }
+  .langs button.on { border-color: var(--accent); color: var(--accent); }
+
+  h1 { font-size: 34px; line-height: 1.15; letter-spacing: -.01em; margin-bottom: 12px; }
+  .lead { color: var(--dim); font-size: 17px; margin-bottom: 26px; max-width: 640px; }
+
+  /* Скачать -- наверху, до всего остального. */
+  .get { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 18px; }
+  @media (max-width: 720px) { .get { grid-template-columns: 1fr; } }
+  .get .card { margin: 0; display: flex; flex-direction: column; gap: 10px; }
+  .get h2 { margin-bottom: 0; }
+  .get p { margin-bottom: 0; }
+  .btn { display: inline-block; text-align: center; padding: 10px 18px;
+         border-radius: 8px; text-decoration: none; font-size: 14px;
+         border: 1px solid #2f6ad9; background: #2f6ad9; color: #fff; }
+  .btn.ghost { background: none; border-color: var(--line); color: var(--fg); }
+  .btn:hover { filter: brightness(1.09); }
+  pre { background: #0b0e13; border: 1px solid var(--line); border-radius: 8px;
+        padding: 10px 12px; overflow-x: auto; font: 12px/1.5 Consolas, monospace;
+        color: #cfd8e3; }
+
+  .badges { display: flex; gap: 6px; flex-wrap: wrap; align-items: center;
+            margin: 6px 0 30px; }
+  .badges img { height: 20px; }
+
+  .card { background: var(--panel); border: 1px solid var(--line);
+          border-radius: 12px; padding: 18px 20px; margin-bottom: 14px; }
+  .card h2 { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
+  .card p { color: var(--dim); font-size: 13.5px; margin-bottom: 12px; }
+  .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .row + .row { margin-top: 8px; }
+  code { font: 13px/1.4 Consolas, monospace; background: #0b0e13;
+         border: 1px solid var(--line); border-radius: 6px;
+         padding: 7px 10px; color: var(--fg); word-break: break-all; }
+  .todo { color: var(--warn); font-size: 13px; font-style: italic; }
+
+  h3.sect { font-size: 13px; text-transform: uppercase; letter-spacing: .06em;
+            color: var(--dim); margin: 34px 0 12px; font-weight: 600; }
+  ul.feat { list-style: none; display: grid; gap: 8px; }
+  ul.feat li { display: flex; gap: 10px; font-size: 14px; color: var(--dim); }
+  ul.feat b { color: var(--fg); font-weight: 600; min-width: 128px; }
+  .shot { width: 100%; border-radius: 10px; border: 1px solid var(--line);
+          margin: 16px 0 0; display: block; }
+
+  footer { color: var(--dim); font-size: 12px; margin-top: 34px;
+           display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
+  footer a { color: var(--accent); text-decoration: none; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="mark">D</div>
+    <a class="name" href="https://github.com/venedicus/drydock">Drydock</a>
+    <span class="spacer"></span>
+    <div class="langs">
+      <button data-lang="ru" class="on">Русский</button>
+      <button data-lang="en">English</button>
+    </div>
+  </header>
+
+  <!-- ── Русский ─────────────────────────────────────────────────── -->
+  <main data-block="ru">
+    <h1>Поблагодарить автора</h1>
+    <p class="lead">
+      Drydock бесплатный, без рекламы и без телеметрии. Если он помог вытащить
+      файлы — спасибо уже за то, что пользуетесь. А если хочется отблагодарить
+      деньгами, вот реквизиты.
+    </p>
+
+    <div class="get">
+      <div class="card">
+        <h2>Готовый файл</h2>
+        <p>Один <code>.exe</code>, Python не нужен. Windows 10/11.</p>
+        <a class="btn" href="https://github.com/venedicus/drydock/releases/latest/download/Drydock.exe">
+          Скачать Drydock.exe</a>
+      </div>
+      <div class="card">
+        <h2>Из исходников</h2>
+        <p>Python 3.12+ и 7-Zip.</p>
+        <pre>git clone https://github.com/venedicus/drydock.git
+cd drydock
+py -3.12 -m venv .venv
+.venv\Scripts\python.exe -m pip install -e .</pre>
+      </div>
+    </div>
+
+    <div class="badges">
+      <a href="https://github.com/venedicus/drydock/releases/latest">
+        <img alt="release" src="https://img.shields.io/github/v/release/venedicus/drydock?color=4fb477"></a>
+      <a href="https://github.com/venedicus/drydock/stargazers">
+        <img alt="stars" src="https://img.shields.io/github/stars/venedicus/drydock?color=5c9ded"></a>
+      <a href="https://github.com/venedicus/drydock/blob/main/LICENSE">
+        <img alt="license" src="https://img.shields.io/badge/license-MIT-4fb477"></a>
+      <a href="https://github.com/venedicus/drydock/commits/main">
+        <img alt="last commit" src="https://img.shields.io/github/last-commit/venedicus/drydock"></a>
+      <a href="https://github.com/venedicus/drydock">
+        <img alt="repo" src="https://img.shields.io/badge/github-venedicus%2Fdrydock-24292f?logo=github"></a>
+    </div>
+
+    <div class="card">
+      <h2>Перевод по карте или СБП</h2>
+      <p>Ссылка на платёжную страницу.</p>
+      <div class="row"><span class="todo">ссылка появится позже</span></div>
+    </div>
+
+    <div class="card">
+      <h2>Криптовалюта</h2>
+      <p>Сеть важна: при переводе не в ту сеть деньги не дойдут.</p>
+      <div class="row"><code>BTC — адрес появится позже</code></div>
+      <div class="row"><code>USDT (TRC-20) — адрес появится позже</code></div>
+      <div class="row"><code>TON — адрес появится позже</code></div>
+    </div>
+
+    <div class="card">
+      <h2>Бесплатно и тоже полезно</h2>
+      <p>
+        Поставить звезду, рассказать о проекте или прислать отчёт о том, где
+        числа разошлись. Для такого проекта это часто важнее денег.
+      </p>
+      <div class="row">
+        <a class="btn" href="https://github.com/venedicus/drydock">Открыть репозиторий</a>
+        <a class="btn ghost" href="https://github.com/venedicus/drydock/issues/new/choose">Сообщить о проблеме</a>
+      </div>
+    </div>
+
+    <h3 class="sect">Что это за проект</h3>
+    <div class="card">
+      <h2>Файлы из облака, которое перестало их отдавать</h2>
+      <p>
+        Опись с хешами, проверка доступности, выгрузка с проверкой, архив в
+        тома и удаление из облака — по шагам, с понятными числами.
+      </p>
+      <ul class="feat">
+        <li><b>Опись</b><span>записывает имя, размер, хеши и место в дереве — включая файлы, которые уже не скачать</span></li>
+        <li><b>Проба</b><span>проверяет доступность без скачивания: первый и последний байт</span></li>
+        <li><b>Круг</b><span>качает всё, что отдаётся, и перепроверяет недоступное, пока не остановишь</span></li>
+        <li><b>Архив</b><span>тома 3.9 / 1.9 ГБ или одним файлом, с проверкой после упаковки</span></li>
+        <li><b>Удаление</b><span>освобождает облако тем, что уже проверено; три уровня строгости</span></li>
+        <li><b>Здоровье</b><span>показывает, почему не выходит: причины отказов, узлы, задачи</span></li>
+      </ul>
+      <img class="shot" src="images/demo.ru.gif" alt="Интерфейс Drydock">
+    </div>
+  </main>
+
+  <!-- ── English ─────────────────────────────────────────────────── -->
+  <main data-block="en" class="hidden">
+    <h1>Thank the author</h1>
+    <p class="lead">
+      Drydock is free, has no ads and no telemetry. If it helped you rescue
+      your files, that is thanks enough. And if you want to give something
+      back, here are the details.
+    </p>
+
+    <div class="get">
+      <div class="card">
+        <h2>Ready-made file</h2>
+        <p>A single <code>.exe</code>, no Python needed. Windows 10/11.</p>
+        <a class="btn" href="https://github.com/venedicus/drydock/releases/latest/download/Drydock.exe">
+          Download Drydock.exe</a>
+      </div>
+      <div class="card">
+        <h2>From sources</h2>
+        <p>Python 3.12+ and 7-Zip.</p>
+        <pre>git clone https://github.com/venedicus/drydock.git
+cd drydock
+py -3.12 -m venv .venv
+.venv\Scripts\python.exe -m pip install -e .</pre>
+      </div>
+    </div>
+
+    <div class="badges">
+      <a href="https://github.com/venedicus/drydock/releases/latest">
+        <img alt="release" src="https://img.shields.io/github/v/release/venedicus/drydock?color=4fb477"></a>
+      <a href="https://github.com/venedicus/drydock/stargazers">
+        <img alt="stars" src="https://img.shields.io/github/stars/venedicus/drydock?color=5c9ded"></a>
+      <a href="https://github.com/venedicus/drydock/blob/main/LICENSE">
+        <img alt="license" src="https://img.shields.io/badge/license-MIT-4fb477"></a>
+      <a href="https://github.com/venedicus/drydock/commits/main">
+        <img alt="last commit" src="https://img.shields.io/github/last-commit/venedicus/drydock"></a>
+      <a href="https://github.com/venedicus/drydock">
+        <img alt="repo" src="https://img.shields.io/badge/github-venedicus%2Fdrydock-24292f?logo=github"></a>
+    </div>
+
+    <div class="card">
+      <h2>Card or SBP transfer</h2>
+      <p>Payment page link.</p>
+      <div class="row"><span class="todo">link will appear later</span></div>
+    </div>
+
+    <div class="card">
+      <h2>Crypto</h2>
+      <p>The network matters: a transfer to the wrong one is lost.</p>
+      <div class="row"><code>BTC — address will appear later</code></div>
+      <div class="row"><code>USDT (TRC-20) — address will appear later</code></div>
+      <div class="row"><code>TON — address will appear later</code></div>
+    </div>
+
+    <div class="card">
+      <h2>Free, and just as useful</h2>
+      <p>
+        Star the repo, tell others about it, or send a report where the
+        numbers do not add up. For a project like this that often matters
+        more than money.
+      </p>
+      <div class="row">
+        <a class="btn" href="https://github.com/venedicus/drydock">Open the repository</a>
+        <a class="btn ghost" href="https://github.com/venedicus/drydock/issues/new/choose">Report a problem</a>
+      </div>
+    </div>
+
+    <h3 class="sect">What this project is</h3>
+    <div class="card">
+      <h2>Files from a cloud that stopped serving them</h2>
+      <p>
+        Inventory with hashes, availability probe, verified download, archive
+        into volumes, and deletion from the cloud — step by step, with plain
+        numbers.
+      </p>
+      <ul class="feat">
+        <li><b>Inventory</b><span>records name, size, hashes and place in the tree — including files that can no longer be downloaded</span></li>
+        <li><b>Probe</b><span>checks availability without downloading: first and last byte</span></li>
+        <li><b>Loop</b><span>downloads everything served and re-checks the rest until stopped</span></li>
+        <li><b>Archive</b><span>3.9 / 1.9 GB volumes or a single file, verified after packing</span></li>
+        <li><b>Delete</b><span>frees the cloud with what is already verified; three strictness levels</span></li>
+        <li><b>Health</b><span>shows why it fails: reasons, nodes, jobs</span></li>
+      </ul>
+      <img class="shot" src="images/demo.en.gif" alt="Drydock interface">
+    </div>
+  </main>
+
+  <footer>
+    <span>© 2026 venedicus · MIT</span>
+    <a href="https://github.com/venedicus/drydock#readme">README</a>
+    <a href="https://github.com/venedicus/drydock/blob/main/docs/how-it-works.md">Как это работает</a>
+    <a href="https://github.com/venedicus/drydock/blob/main/docs/comparison.md">Сравнение</a>
+    <span class="spacer"></span>
+    <span>Не связан с Яндексом</span>
+  </footer>
+
+</div>
+
+<script>
+  // Два языка одной страницы: переключаем блоки, выбор помним.
+  const blocks = document.querySelectorAll("[data-block]");
+  const buttons = document.querySelectorAll(".langs button");
+  function setLang(lang) {
+    for (const b of blocks) b.classList.toggle("hidden", b.dataset.block !== lang);
+    for (const btn of buttons) btn.classList.toggle("on", btn.dataset.lang === lang);
+    document.documentElement.lang = lang;
+    try { localStorage.setItem("drydock-site-lang", lang); } catch (e) {}
+  }
+  for (const btn of buttons) btn.onclick = () => setLang(btn.dataset.lang);
+  let start = "ru";
+  try {
+    const saved = localStorage.getItem("drydock-site-lang");
+    if (saved === "ru" || saved === "en") start = saved;
+    else if (!String(navigator.language || "").toLowerCase().startsWith("ru")) start = "en";
+  } catch (e) { /* приватный режим -- остаёмся на русском */ }
+  setLang(start);
+</script>
+</body>
+</html>
