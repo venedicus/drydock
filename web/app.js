@@ -1109,8 +1109,9 @@ async function pollJobs() {
     const wasBusy = busyKinds;
     busyKinds = new Set(running.map((j) => j.kind));
     if (lastState) paintActions(lastState, lastTotals || {});
-    // Круг идёт часами и заканчивается, когда окно уже свёрнуто. Скажем
+    // Работа идёт часами и может закончиться, пока окно свёрнуто. Скажем
     // об этом тостом: молча закончившаяся работа выглядит как зависание.
+    // Сам круг от окна не зависит: он живёт на локальном сервере.
     if (wasBusy.has("download-loop") && !busyKinds.has("download-loop")) {
       const loop = data.items.find((j) => j.kind === "download-loop");
       if (loop) toast(jobText(loop.message) || t("loop.finished"));
