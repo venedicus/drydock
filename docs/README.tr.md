@@ -90,7 +90,7 @@ py -3.12 -m venv .venv
 | Litecoin (LTC) | `ltc1qp0wfw2hezl94c4c3cl6yeya4wcczck2ttjaun8` |
 | Monero (XMR) | `45LuFsk9rr7JwepcsfaspeTwyUVy7QbbWUbA1hsBj374h3BPhyPvpqWLVfQM9kDJBddZKsQcNbDEhS3ZTdoritJvGLdsWPF` |
 
-Ağ, madeni paradan önemlidir: yanlış ağa yapılan transfer geri alınamaz. Kart, SBP ve YooMoney: [ödeme sayfası](https://yoomoney.ru/to/4100117869777196).
+Ethereum, BNB Chain ve Polygon aynı adresi kullanır — ağ gönderirken seçilir. Kart, SBP ve YooMoney: [ödeme sayfası](https://yoomoney.ru/to/4100117869777196).
 
 </details>
 

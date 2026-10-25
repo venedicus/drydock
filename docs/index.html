@@ -84,7 +84,7 @@
 
   /* ── реквизиты: сеть слева, адрес справа ──────────────────────── */
   ul.coins { list-style: none; margin-top: 2px; }
-  ul.coins li { display: grid; grid-template-columns: 154px 1fr auto;
+  ul.coins li { display: grid; grid-template-columns: 176px 1fr auto;
                 gap: 10px; align-items: center; padding: 9px 0;
                 border-top: 1px solid var(--line); }
   ul.coins li:first-child { border-top: 0; }
@@ -202,18 +202,11 @@ py -3.12 -m venv .venv
       </div>
     </div>
 
-    <h2 class="thanks">Поблагодарить автора</h2>
-    <p class="thanks-lead">
-      Поблагодарить можно звездой на GitHub или деньгами — чем удобнее.
-      Реквизиты ниже.
-    </p>
+    <h2 class="thanks">Донат</h2>
+    <p class="thanks-lead">Реквизиты для перевода.</p>
 
     <div class="card">
-      <h2>Карта, СБП или ЮMoney</h2>
-      <p>
-        Страница ЮMoney: сумму выбираете сами, регистрация не нужна. Принимает
-        карты и СБП.
-      </p>
+      <h2>Карта, СБП, ЮMoney</h2>
       <div class="row">
         <a class="btn" href="https://yoomoney.ru/to/4100117869777196">Перевести</a>
         <code>yoomoney.ru/to/4100117869777196</code>
@@ -222,48 +215,44 @@ py -3.12 -m venv .venv
 
     <div class="card">
       <h2>Криптовалюта</h2>
-      <p>
-        Сеть важнее монеты: перевод не в ту сеть вернуть нельзя. Внутри сети
-        подойдёт и её собственная монета, и стейблкоин.
-      </p>
       <ul class="coins">
         <li>
-          <span class="net">Bitcoin<i>BTC, SegWit</i></span>
+          <span class="net">Bitcoin<i>BTC</i></span>
           <span class="addr">bc1qaj3jllqse90sqcrfvtyv5ll7le2guh0q30prp2</span>
           <button class="copy" type="button" data-copy="bc1qaj3jllqse90sqcrfvtyv5ll7le2guh0q30prp2" data-done="скопировано">копировать</button>
         </li>
         <li>
-          <span class="net">Bitcoin Lightning<i>мгновенно, дёшево</i></span>
+          <span class="net">Bitcoin Lightning<i>BTC · Lightning-адрес</i></span>
           <span class="addr">venedicus@cake.cash</span>
           <button class="copy" type="button" data-copy="venedicus@cake.cash" data-done="скопировано">копировать</button>
         </li>
         <li>
-          <span class="net">Ethereum<i>ETH, ERC-20: USDT, USDC</i></span>
+          <span class="net">Ethereum<i>ETH и любые ERC-20</i></span>
           <span class="addr">0x1e728B3568c9072A749694dEa116b1c8331fD43a</span>
           <button class="copy" type="button" data-copy="0x1e728B3568c9072A749694dEa116b1c8331fD43a" data-done="скопировано">копировать</button>
         </li>
         <li>
-          <span class="net">BNB Chain<i>BNB, BEP-20: USDT, USDC</i></span>
+          <span class="net">BNB Chain<i>BNB и любые BEP-20</i></span>
           <span class="addr">0x1e728B3568c9072A749694dEa116b1c8331fD43a</span>
           <button class="copy" type="button" data-copy="0x1e728B3568c9072A749694dEa116b1c8331fD43a" data-done="скопировано">копировать</button>
         </li>
         <li>
-          <span class="net">Polygon<i>POL и токены сети</i></span>
+          <span class="net">Polygon<i>POL и любые ERC-20</i></span>
           <span class="addr">0x1e728B3568c9072A749694dEa116b1c8331fD43a</span>
           <button class="copy" type="button" data-copy="0x1e728B3568c9072A749694dEa116b1c8331fD43a" data-done="скопировано">копировать</button>
         </li>
         <li>
-          <span class="net">TON<i>TON, USDT</i></span>
+          <span class="net">TON<i>TON и любые жетоны</i></span>
           <span class="addr">UQBKSMU3B9OFfaqWK3iQBCyifZjCEgF8m4kBsO-Tu5U4Grx1</span>
           <button class="copy" type="button" data-copy="UQBKSMU3B9OFfaqWK3iQBCyifZjCEgF8m4kBsO-Tu5U4Grx1" data-done="скопировано">копировать</button>
         </li>
         <li>
-          <span class="net">Tron<i>TRX, USDT (TRC-20)</i></span>
+          <span class="net">Tron<i>TRX и любые TRC-20</i></span>
           <span class="addr">TMibQMbptanys3JVgZxpHucQLZsWGTihzg</span>
           <button class="copy" type="button" data-copy="TMibQMbptanys3JVgZxpHucQLZsWGTihzg" data-done="скопировано">копировать</button>
         </li>
         <li>
-          <span class="net">Solana<i>SOL, SPL: USDT, USDC</i></span>
+          <span class="net">Solana<i>SOL и любые SPL</i></span>
           <span class="addr">5xb56pkcUk473d13MKADLdBNtuA2v4qFukSpWermZhm3</span>
           <button class="copy" type="button" data-copy="5xb56pkcUk473d13MKADLdBNtuA2v4qFukSpWermZhm3" data-done="скопировано">копировать</button>
         </li>
@@ -278,19 +267,14 @@ py -3.12 -m venv .venv
           <button class="copy" type="button" data-copy="ltc1qp0wfw2hezl94c4c3cl6yeya4wcczck2ttjaun8" data-done="скопировано">копировать</button>
         </li>
         <li>
-          <span class="net">Monero<i>XMR, своя сеть</i></span>
+          <span class="net">Monero<i>XMR</i></span>
           <span class="addr">45LuFsk9rr7JwepcsfaspeTwyUVy7QbbWUbA1hsBj374h3BPhyPvpqWLVfQM9kDJBddZKsQcNbDEhS3ZTdoritJvGLdsWPF</span>
           <button class="copy" type="button" data-copy="45LuFsk9rr7JwepcsfaspeTwyUVy7QbbWUbA1hsBj374h3BPhyPvpqWLVfQM9kDJBddZKsQcNbDEhS3ZTdoritJvGLdsWPF" data-done="скопировано">копировать</button>
         </li>
       </ul>
       <div class="notes">
-        <span>У Ethereum, BNB Chain и Polygon один и тот же адрес — сеть
-          выбирается при отправке, и указать нужно именно её.</span>
-        <span>USDT и USDC дешевле в TRC-20 и TON: комиссия — центы.
-          В Ethereum комиссия может съесть половину суммы.</span>
-        <span>Lightning — для небольших сумм: доходит за секунды, комиссия
-          почти нулевая. Адрес вида name@domain понимает любой
-          Lightning-кошелёк.</span>
+        <span>Ethereum, BNB Chain и Polygon используют один адрес — сеть
+          выбирается при отправке.</span>
       </div>
     </div>
 
@@ -378,17 +362,11 @@ py -3.12 -m venv .venv
       </div>
     </div>
 
-    <h2 class="thanks">Thank the author</h2>
-    <p class="thanks-lead">
-      A star on GitHub or a transfer — whichever suits you. Details below.
-    </p>
+    <h2 class="thanks">Donations</h2>
+    <p class="thanks-lead">Details for a transfer.</p>
 
     <div class="card">
-      <h2>Card, SBP or YooMoney</h2>
-      <p>
-        YooMoney page: you choose the amount, no sign-up needed. Cards and SBP
-        are accepted.
-      </p>
+      <h2>Card, SBP, YooMoney</h2>
       <div class="row">
         <a class="btn" href="https://yoomoney.ru/to/4100117869777196">Send</a>
         <code>yoomoney.ru/to/4100117869777196</code>
@@ -397,49 +375,44 @@ py -3.12 -m venv .venv
 
     <div class="card">
       <h2>Crypto</h2>
-      <p>
-        The network matters more than the coin: a transfer to the wrong one
-        cannot be reversed. Inside a network both its own coin and a stablecoin
-        will do.
-      </p>
       <ul class="coins">
         <li>
-          <span class="net">Bitcoin<i>BTC, SegWit</i></span>
+          <span class="net">Bitcoin<i>BTC</i></span>
           <span class="addr">bc1qaj3jllqse90sqcrfvtyv5ll7le2guh0q30prp2</span>
           <button class="copy" type="button" data-copy="bc1qaj3jllqse90sqcrfvtyv5ll7le2guh0q30prp2" data-done="copied">copy</button>
         </li>
         <li>
-          <span class="net">Bitcoin Lightning<i>instant, cheap</i></span>
+          <span class="net">Bitcoin Lightning<i>BTC · Lightning address</i></span>
           <span class="addr">venedicus@cake.cash</span>
           <button class="copy" type="button" data-copy="venedicus@cake.cash" data-done="copied">copy</button>
         </li>
         <li>
-          <span class="net">Ethereum<i>ETH, ERC-20: USDT, USDC</i></span>
+          <span class="net">Ethereum<i>ETH and any ERC-20</i></span>
           <span class="addr">0x1e728B3568c9072A749694dEa116b1c8331fD43a</span>
           <button class="copy" type="button" data-copy="0x1e728B3568c9072A749694dEa116b1c8331fD43a" data-done="copied">copy</button>
         </li>
         <li>
-          <span class="net">BNB Chain<i>BNB, BEP-20: USDT, USDC</i></span>
+          <span class="net">BNB Chain<i>BNB and any BEP-20</i></span>
           <span class="addr">0x1e728B3568c9072A749694dEa116b1c8331fD43a</span>
           <button class="copy" type="button" data-copy="0x1e728B3568c9072A749694dEa116b1c8331fD43a" data-done="copied">copy</button>
         </li>
         <li>
-          <span class="net">Polygon<i>POL and network tokens</i></span>
+          <span class="net">Polygon<i>POL and any ERC-20</i></span>
           <span class="addr">0x1e728B3568c9072A749694dEa116b1c8331fD43a</span>
           <button class="copy" type="button" data-copy="0x1e728B3568c9072A749694dEa116b1c8331fD43a" data-done="copied">copy</button>
         </li>
         <li>
-          <span class="net">TON<i>TON, USDT</i></span>
+          <span class="net">TON<i>TON and any jettons</i></span>
           <span class="addr">UQBKSMU3B9OFfaqWK3iQBCyifZjCEgF8m4kBsO-Tu5U4Grx1</span>
           <button class="copy" type="button" data-copy="UQBKSMU3B9OFfaqWK3iQBCyifZjCEgF8m4kBsO-Tu5U4Grx1" data-done="copied">copy</button>
         </li>
         <li>
-          <span class="net">Tron<i>TRX, USDT (TRC-20)</i></span>
+          <span class="net">Tron<i>TRX and any TRC-20</i></span>
           <span class="addr">TMibQMbptanys3JVgZxpHucQLZsWGTihzg</span>
           <button class="copy" type="button" data-copy="TMibQMbptanys3JVgZxpHucQLZsWGTihzg" data-done="copied">copy</button>
         </li>
         <li>
-          <span class="net">Solana<i>SOL, SPL: USDT, USDC</i></span>
+          <span class="net">Solana<i>SOL and any SPL</i></span>
           <span class="addr">5xb56pkcUk473d13MKADLdBNtuA2v4qFukSpWermZhm3</span>
           <button class="copy" type="button" data-copy="5xb56pkcUk473d13MKADLdBNtuA2v4qFukSpWermZhm3" data-done="copied">copy</button>
         </li>
@@ -454,18 +427,14 @@ py -3.12 -m venv .venv
           <button class="copy" type="button" data-copy="ltc1qp0wfw2hezl94c4c3cl6yeya4wcczck2ttjaun8" data-done="copied">copy</button>
         </li>
         <li>
-          <span class="net">Monero<i>XMR, its own chain</i></span>
+          <span class="net">Monero<i>XMR</i></span>
           <span class="addr">45LuFsk9rr7JwepcsfaspeTwyUVy7QbbWUbA1hsBj374h3BPhyPvpqWLVfQM9kDJBddZKsQcNbDEhS3ZTdoritJvGLdsWPF</span>
           <button class="copy" type="button" data-copy="45LuFsk9rr7JwepcsfaspeTwyUVy7QbbWUbA1hsBj374h3BPhyPvpqWLVfQM9kDJBddZKsQcNbDEhS3ZTdoritJvGLdsWPF" data-done="copied">copy</button>
         </li>
       </ul>
       <div class="notes">
-        <span>Ethereum, BNB Chain and Polygon share one address — the network is
-          chosen when you send, and it has to be the right one.</span>
-        <span>USDT and USDC are cheaper on TRC-20 and TON: fees are cents. On
-          Ethereum the fee can eat half the amount.</span>
-        <span>Lightning is for small sums: seconds to arrive, near-zero fee.
-          The name@domain form is understood by any Lightning wallet.</span>
+        <span>Ethereum, BNB Chain and Polygon share one address — pick the
+          network when sending.</span>
       </div>
     </div>
 
