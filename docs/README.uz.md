@@ -89,7 +89,7 @@ py -3.12 -m venv .venv
 | Litecoin (LTC) | `ltc1qp0wfw2hezl94c4c3cl6yeya4wcczck2ttjaun8` |
 | Monero (XMR) | `45LuFsk9rr7JwepcsfaspeTwyUVy7QbbWUbA1hsBj374h3BPhyPvpqWLVfQM9kDJBddZKsQcNbDEhS3ZTdoritJvGLdsWPF` |
 
-Tarmoq tangadan muhimroq: notoʻgʻri tarmoqqa oʻtkazmani qaytarib boʻlmaydi. Karta, SBP va YooMoney: [toʻlov sahifasi](https://yoomoney.ru/to/4100117869777196).
+Ethereum, BNB Chain va Polygon bitta manzildan foydalanadi — tarmoq joʻnatishda tanlanadi. Karta, SBP va YooMoney: [toʻlov sahifasi](https://yoomoney.ru/to/4100117869777196).
 
 </details>
 
