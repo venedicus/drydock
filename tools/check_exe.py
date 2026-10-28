@@ -54,11 +54,21 @@ def main() -> int:
         print("exe не ответил за 60 секунд")
         return 1
     finally:
-        proc.terminate()
+        # PyInstaller onefile запускает настоящий сервер дочерним процессом:
+        # terminate() снимает только распаковщик, а `serve` остаётся висеть
+        # на порту и ломает следующий прогон. Поэтому на Windows снимаем
+        # всё дерево целиком.
+        if os.name == "nt":
+            subprocess.run(  # noqa: PLW1510 - код возврата здесь не важен
+                ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                capture_output=True,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        else:
+            proc.kill()
         try:
             proc.wait(timeout=10)
         except subprocess.TimeoutExpired:
-            proc.kill()
+            pass
         shutil.rmtree(root, ignore_errors=True)
 
 

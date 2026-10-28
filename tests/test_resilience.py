@@ -230,6 +230,68 @@ def test_launcher_window_decision() -> None:
     print("решение лаунчера про мгновенно закрывшееся окно: ок")
 
 
+def test_launcher_takes_free_port_when_foreign_app_holds_it() -> None:
+    """Занятый чужим процессом порт не должен валить запуск.
+
+    Со стороны это выглядело как падение: окно не появлялось, а сообщение
+    из print показывать было некуда -- pythonw без консоли.
+    """
+    import socket
+
+    busy = socket.socket()
+    busy.bind(("127.0.0.1", 0))
+    busy.listen(1)
+    port = busy.getsockname()[1]
+    started: list[int] = []
+
+    class FakeThread:
+        def join(self, timeout: float | None = None) -> None:
+            return None
+
+    class FakeServer:
+        should_exit = False
+
+    class FakeWindow:
+        def wait(self) -> None:
+            return None
+
+        def terminate(self) -> None:
+            return None
+
+    def fake_ours(p: int, tries: int = 3) -> bool:
+        return False
+
+    def fake_serve(p: int):
+        started.append(p)
+        return FakeServer(), FakeThread()
+
+    def fake_ready(p: int, timeout: float = 30) -> bool:
+        return True
+
+    def fake_window(p: int, **kw) -> FakeWindow:
+        return FakeWindow()
+
+    def fake_alive() -> bool:
+        return False
+
+    patched = {"ours": fake_ours, "_serve": fake_serve, "wait_ready": fake_ready,
+               "open_window": fake_window, "profile_browser_alive": fake_alive,
+               "log": lambda *a, **k: None}
+    originals = {name: getattr(desktop, name) for name in patched}
+    for name, fn in patched.items():
+        setattr(desktop, name, fn)
+    try:
+        code = desktop._run(port, keep_running=False)
+    finally:
+        for name, fn in originals.items():
+            setattr(desktop, name, fn)
+        busy.close()
+
+    assert code == 0, code
+    assert started and port < started[0] < port + 20, started
+    print("занятый чужой программой порт: берётся свободный рядом")
+
+
 def test_preview_name_within_component_limit() -> None:
     """Имя превью с '.jpg' не имеет права вылезать за 255 на компонент.
 
@@ -521,6 +583,7 @@ def main() -> int:
     test_walk_stops_on_cancel_during_retry()
     test_scan_checkpoint_and_resume()
     test_launcher_window_decision()
+    test_launcher_takes_free_port_when_foreign_app_holds_it()
     test_preview_name_within_component_limit()
     test_harvest_survives_single_bad_file()
     test_download_retries_and_resumes()
