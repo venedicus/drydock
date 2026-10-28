@@ -89,6 +89,19 @@ def ours(port: int, tries: int = 3) -> bool:
     return False
 
 
+def next_port(start: int, span: int = 20) -> int | None:
+    """Первый порт от start, который свободен или занят нашим же сервером.
+
+    Нужен, когда порт по умолчанию держит чужая программа: подниматься на
+    случайном порту из чужого диапазона хуже, чем не подняться вовсе, а
+    молча умирать -- хуже всего.
+    """
+    for port in range(start, start + span):
+        if not port_busy(port) or ours(port):
+            return port
+    return None
+
+
 def profile_browser_alive() -> bool:
     """Живёт ли хоть одно окно браузера с нашим профилем.
 
@@ -198,9 +211,24 @@ def _run(port: int, *, keep_running: bool) -> int:
             log("уже работает -- открываю ещё одно окно")
             open_window(port)
             return 0
-        log(f"порт {port} занят чужой программой")
-        print(f"Порт {port} занят другой программой. Укажи другой: --port", file=sys.stderr)
-        return 2
+
+        # Порт занят чужой программой. Раньше здесь был return 2 с print в
+        # stderr, но окна ещё нет, а из-под pythonw stderr никто не видит:
+        # запуск выглядел как падение -- ни окна, ни сообщения, в логе одна
+        # строка. Берём ближайший свободный порт: для человека, который
+        # просто запустил программу, ничего не меняется.
+        alt = next_port(port + 1)
+        if alt is None:
+            log(f"порт {port} занят чужой программой, свободного рядом нет")
+            print(f"Порт {port} занят другой программой. Укажи другой: --port",
+                  file=sys.stderr)
+            return 2
+        if ours(alt):
+            log(f"порт {port} занят чужой программой -- открываю окно к {alt}")
+            open_window(alt)
+            return 0
+        log(f"порт {port} занят чужой программой -- беру {alt}")
+        port = alt
 
     srv, thread = _serve(port)
     if not wait_ready(port):
