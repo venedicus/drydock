@@ -203,6 +203,62 @@ def test_double_start_guard(client: TestClient) -> None:
     print("повторный запуск того же вида: 409 с объяснением")
 
 
+def test_download_and_loop_conflict_both_directions(client: TestClient) -> None:
+    """Обычная выгрузка и круг не должны трогать один .part одновременно.
+
+    В базе это разные kind, но обе работы зовут download.run и пишут в один
+    путь. Блокировка обязана быть симметричной для двух порядков запуска.
+    """
+    c = server.conn()
+    from drydock import db
+
+    paths = ("disk:/cross-download.pdf", "disk:/cross-loop.pdf")
+    for path in paths:
+        db.upsert_resource(c, {"path": path, "name": path.rsplit("/", 1)[-1],
+                               "type": "file", "size": 10})
+
+    def running(kind: str) -> int:
+        return int(c.execute(
+            "INSERT INTO jobs(kind,state,started_at,total,done) "
+            "VALUES(?,'running',?,1,0)", (kind, db.now())).lastrowid)
+
+    first_id = running("download-loop")
+    resp = client.post("/api/download", json={
+        "paths": [paths[0]], "available_only": False})
+    assert resp.status_code == 409, (resp.status_code, resp.text[:200])
+    assert resp.json()["detail"]["kind"] == "download-loop"
+    c.execute("UPDATE jobs SET state='interrupted' WHERE id=?", (first_id,))
+
+    second_id = running("download")
+    resp = client.post("/api/download/loop", json={"paths": [paths[1]]})
+    assert resp.status_code == 409, (resp.status_code, resp.text[:200])
+    assert resp.json()["detail"]["kind"] == "download"
+    c.execute("UPDATE jobs SET state='interrupted' WHERE id=?", (second_id,))
+
+    autopilot_id = running("autopilot")
+    resp = client.post("/api/download", json={
+        "paths": [paths[0]], "available_only": False})
+    assert resp.status_code == 409, (resp.status_code, resp.text[:200])
+    assert resp.json()["detail"]["kind"] == "autopilot"
+    c.execute("UPDATE jobs SET state='interrupted' WHERE id=?", (autopilot_id,))
+
+
+def test_delete_rejects_unknown_destructive_level(client: TestClient) -> None:
+    """Неизвестный уровень удаления не должен молча стать downloaded."""
+    resp = client.post("/api/cloud-delete/preview", json={"level": "junk"})
+    assert resp.status_code == 422, (resp.status_code, resp.text[:200])
+
+
+def test_scan_body_accepts_full_flag() -> None:
+    """Флаг полной описи должен доходить до сервера.
+
+    Он снимает пропуск известно пустых папок, и без него человек не смог
+    бы перепроверить облако целиком.
+    """
+    assert server.ScanBody(root="disk:/", full=True).full is True
+    assert server.ScanBody(root="disk:/").full is False
+
+
 def test_partial_state(client: TestClient) -> None:
     """Задача с провалами -- «готово с ошибками», а не «готово».
 

@@ -51,3 +51,30 @@ def test_palette_has_escape_and_arrows() -> None:
     assert 'closePalette' in APP
     assert 'e.key === "ArrowDown"' in APP
     assert 'e.key === "Enter"' in APP
+
+
+def test_full_inventory_switch_reaches_the_server() -> None:
+    """Галочка «полная опись» есть в окне и уходит на сервер.
+
+    Опись пропускает известно пустые папки -- и человек должен иметь
+    возможность это отключить, не лезя в консоль.
+    """
+    assert 'id="scan-full"' in HTML, "нет переключателя полной описи"
+    assert "full:" in APP, "переключатель не уходит на сервер"
+    assert 'data-i18n="scan.full"' in HTML, "нет подписи переключателя"
+
+
+def test_download_and_loop_are_mutually_exclusive_in_ui() -> None:
+    """Пока идёт любой вид выгрузки, второй не должен запускаться."""
+    assert 'busyKinds.has("download")' in APP
+    assert 'busyKinds.has("download-loop")' in APP
+    assert 'const downloadBusy =' in APP
+
+
+def test_file_detail_escapes_server_metadata() -> None:
+    """Строковые поля из облака не должны попасть в innerHTML как HTML."""
+    assert 'esc(d.mime || "—")' in APP
+    assert 'esc(d.modified || "—")' in APP
+    assert 'esc(d.probe_state)' in APP
+    assert 'esc(d.md5 || "—")' in APP
+    assert 'esc(d.sha256 || "—")' in APP

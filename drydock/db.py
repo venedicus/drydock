@@ -42,6 +42,19 @@ CREATE TABLE IF NOT EXISTS resources(
 CREATE INDEX IF NOT EXISTS ix_res_parent ON resources(parent, type, name);
 CREATE INDEX IF NOT EXISTS ix_res_type   ON resources(type, size DESC);
 
+-- Папки, которые при последнем перечислении оказались пустыми. Пустая
+-- папка стоит ровно один запрос и не даёт ничего, а таких папок в
+-- коллекции тысячи -- именно они съедали время описи. Пока сервер отдаёт
+-- ту же дату изменения, такую папку можно не перечислять заново.
+-- modified здесь -- тот, что был В МОМЕНТ находки: текущая дата папки
+-- живёт в resources.modified и меняется на каждой описи, а сравнивать
+-- надо именно с тем, что видели тогда.
+CREATE TABLE IF NOT EXISTS empty_dirs(
+  path     TEXT PRIMARY KEY,
+  modified TEXT,
+  at       INTEGER NOT NULL
+);
+
 -- Проба доступности: отдаёт ли хранилище первый байт. Скачивания нет.
 CREATE TABLE IF NOT EXISTS probe(
   path         TEXT PRIMARY KEY,
@@ -220,6 +233,34 @@ def kv_set(conn: sqlite3.Connection, key: str, value: Any) -> None:
 
 def kv_del(conn: sqlite3.Connection, key: str) -> None:
     conn.execute("DELETE FROM kv WHERE k=?", (key,))
+
+
+def known_empty_dirs(conn: sqlite3.Connection) -> dict[str, str]:
+    """Папки, которые в прошлый раз оказались пустыми: путь -> дата изменения.
+
+    Дата изменения та, что была в момент находки: текущая лежит в
+    resources.modified и меняется на каждой описи.
+    """
+    rows = conn.execute("SELECT path, modified FROM empty_dirs").fetchall()
+    return {r["path"]: r["modified"] or "" for r in rows}
+
+
+def mark_empty(conn: sqlite3.Connection, path: str, empty: bool) -> None:
+    """Пометить папку пустой -- или снять пометку, если там что-то есть.
+
+    Пометку обязательно снимать: папка, в которую положили файл, больше
+    не пустая, и если оставить её в списке «пустых», следующая опись
+    пропустит её и не увидит файл.
+    """
+    if empty:
+        conn.execute(
+            "INSERT INTO empty_dirs(path, modified, at) "
+            "VALUES(?, (SELECT modified FROM resources WHERE path=?), ?) "
+            "ON CONFLICT(path) DO UPDATE SET "
+            "modified=excluded.modified, at=excluded.at",
+            (path, path, now()))
+    else:
+        conn.execute("DELETE FROM empty_dirs WHERE path=?", (path,))
 
 
 def upsert_resource(conn: sqlite3.Connection, item: dict) -> None:

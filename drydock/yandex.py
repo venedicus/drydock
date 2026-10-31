@@ -184,9 +184,11 @@ class Disk:
 
     async def walk(self, root: str | list[str] = "disk:/", *,
                    should_stop: Callable[[], bool] | None = None,
-                   on_pending: Callable[[list[str]], None] | None = None
-                   ) -> AsyncIterator[dict]:
-        """Рекурсивный обход в глубину: отдаёт и файлы, и папки.
+                   on_pending: Callable[[dict[str, None]], None] | None = None,
+                   skip: Callable[[dict], bool] | None = None,
+                   on_folder: Callable[[str, bool], None] | None = None,
+                   concurrency: int | None = None) -> AsyncIterator[dict]:
+        """Обход облака: отдаёт и файлы, и папки.
 
         Обходим дерево, а не плоский /resources/files, по двум причинам:
         плоский список не содержит папок (а структуру надо повторить один
@@ -198,6 +200,14 @@ class Disk:
         исключение, а ждёт и переспрашивает ту же страницу: смещение не
         сдвигается, дублей в описи не появится.
 
+        Четвёртая причина -- скорость. Обход шёл строго по одной папке:
+        сеть всё это время молчала и ждала ответа, а в коллекции десятки
+        тысяч пустых папок, каждая из которых стоила отдельного запроса.
+        Теперь папки перечисляются пачками (по SCAN_CONCURRENCY
+        одновременно), и пустая папка обходится тем же запросом, что и
+        любая другая, -- просто он ложится в общий поток, а не отдельной
+        паузой в конце.
+
         root -- "disk:/" либо ГОТОВАЯ ОЧЕРЕДЬ папок. Очередь отдаёт опись,
         продолженная с чекпоинта: обход встаёт на оставшиеся папки, а не
         начинает облако с корня заново.
@@ -208,19 +218,47 @@ class Disk:
         папка, которая прямо сейчас перечисляется: прерванный обход
         продолжится с неё, а не потеряет её хвост. Перечисление пойдёт
         с нулевого смещения -- записи идемпотентны, лишние upsert'ы
-        дешевле потерянных файлов.
+        дешевле потерянных файлов. Колбэк получает ЖИВУЮ структуру:
+        копия на каждое событие при десятках тысяч папок стоила бы
+        дороже самой описи.
+        skip -- «эту папку не перечислять». Спрашивается про каждую
+        найденную папку; вернуть True -- значит не спускаться в неё.
+        on_folder -- «папка перечислена». Второе значение True означает
+        «внутри ничего нет»: такую папку можно не перечислять в
+        следующий раз, пока сервер отдаёт ту же дату изменения.
         """
-        stack = [root] if isinstance(root, str) else list(root)
-        delay = WALK_RETRY_MIN
-        while stack:
-            folder = stack.pop()
-            if on_pending is not None:
-                on_pending(stack + [folder])
+        folders = [root] if isinstance(root, str) else list(root)
+        limit = max(1, int(concurrency or config.SCAN_CONCURRENCY))
+        work: asyncio.Queue[str] = asyncio.Queue()
+        # Очередь результатов ограничена: без предела воркеры обгоняют
+        # запись в базу, и в памяти копится весь облако целиком. Двадцати
+        # тысяч записей хватает, чтобы сеть и диск работали внахлёст.
+        out: asyncio.Queue[tuple[str, object]] = asyncio.Queue(maxsize=20000)
+        halt = asyncio.Event()
+        # Папки, которые предстоит перечислить: в очереди плюс в работе.
+        # Из этой структуры делается чекпоинт, поэтому она меняется на
+        # месте -- список с проверкой «есть ли уже» стоил бы квадрата.
+        pending: dict[str, None] = {}
+        for folder in folders:
+            pending[folder] = None
+            work.put_nowait(folder)
+        # Сколько папок ещё предстоит перечислить. Пустая очередь сама
+        # по себе ещё не значит конец: воркеры могут дочитывать папку.
+        left = len(folders)
+
+        async def list_folder(folder: str) -> None:
+            """Вся папка, страница за страницей. Сеть моргает -- ждём."""
             offset = 0
+            delay = WALK_RETRY_MIN
+            empty = True
             while True:
                 try:
                     data = await self.listdir(folder, offset=offset)
                 except FileNotFoundError:
+                    # Папки нет. Пустой её не считаем: «пустая» -- это
+                    # «перечислили и ничего не нашли», а «нет папки» --
+                    # другое, и в следующий раз её надо попробовать снова.
+                    empty = False
                     break
                 except Exception as exc:
                     # 401/403 ожиданием не лечатся: токен протух, нужен человек.
@@ -231,25 +269,77 @@ class Disk:
                     log.warning("обход: %s не ответил (%s: %s), повтор через %.0fс",
                                 folder, type(exc).__name__, str(exc)[:120], delay)
                     if await _wait_or_stop(delay, should_stop):
+                        halt.set()
+                        await out.put(("stop", None))
                         return
                     delay = min(delay * 2, WALK_RETRY_MAX)
                     continue
                 delay = WALK_RETRY_MIN
                 emb = data.get("_embedded") or {}
-                items = emb.get("items") or []
+                page = emb.get("items") or []
+                total = int(emb.get("total") or 0)
                 if offset == 0 and data.get("type") == "dir":
-                    yield {k: v for k, v in data.items() if k != "_embedded"}
-                for item in items:
-                    yield item
-                    if item.get("type") == "dir":
-                        stack.append(item["path"])
-                        if on_pending is not None:
-                            on_pending(stack + [folder])
-                offset += len(items)
-                if len(items) == 0 or offset >= int(emb.get("total") or 0):
+                    # Папка сама о себе -- это отдельное сообщение, а не
+                    # элемент чужой папки: иначе обход счёл бы её своим же
+                    # подчинённым и полез бы в неё бесконечно.
+                    await out.put(("self", {k: v for k, v in data.items()
+                                            if k != "_embedded"}))
+                if page:
+                    empty = False
+                    for item in page:
+                        await out.put(("item", item))
+                offset += len(page)
+                if len(page) == 0 or offset >= total:
                     break
-            if on_pending is not None:
-                on_pending(list(stack))
+            await out.put(("folder", (folder, empty)))
+
+        async def worker() -> None:
+            while not halt.is_set():
+                folder = await work.get()
+                try:
+                    await list_folder(folder)
+                except Exception as exc:  # noqa: BLE001 - падение воркера не должно тихо обрезать обход
+                    halt.set()
+                    await out.put(("error", exc))
+                    return
+                finally:
+                    work.task_done()
+
+        tasks = [asyncio.create_task(worker()) for _ in range(limit)]
+        try:
+            while True:
+                kind, payload = await out.get()
+                if kind == "self":
+                    yield payload
+                elif kind == "item":
+                    item = payload
+                    if item.get("type") == "dir":
+                        path = item.get("path")
+                        if path and not (skip is not None and skip(item)):
+                            pending[path] = None
+                            work.put_nowait(path)
+                            left += 1
+                            if on_pending is not None:
+                                on_pending(pending)
+                    yield item
+                elif kind == "folder":
+                    folder, empty = payload
+                    pending.pop(folder, None)
+                    left -= 1
+                    if on_folder is not None:
+                        on_folder(folder, empty)
+                    if on_pending is not None:
+                        on_pending(pending)
+                    if left <= 0:
+                        break
+                elif kind == "stop":
+                    break
+                elif kind == "error":
+                    raise payload
+        finally:
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     # ── проба доступности ────────────────────────────────────────────
 

@@ -141,41 +141,35 @@ def main() -> int:
     assert any("архив" in b["reason"] for b in blocked2)
     print("строгий уровень на месте и требует архива")
 
-    # ── уровень «мусор» ──────────────────────────────────────────────
-    # Удалять можно то, что уже не спасётся и локально отсутствует.
-    # Всё доступное, непроверенное и уже отсутствующее в облаке -- нет.
+    # ── недоступность не доказывает безвозвратную потерю ───────────────
+    # Доступность плавает; одна временная ошибка не должна открывать
+    # необратимое удаление. Уровень «junk» отклоняется и библиотекой,
+    # и перед отправкой запроса в облако.
     def probe_only(path: str, state: str) -> None:
         db.upsert_resource(conn, {"path": path, "name": Path(path).name,
                                   "type": "file", "size": 50})
         db.record_probe(conn, path, state, 504 if state != "ok" else 200)
 
-    junk_bad = "disk:/junk/bad.bin"       # недоступен, локально нет -- мусор
+    junk_bad = "disk:/junk/bad.bin"
     probe_only(junk_bad, "unavailable")
-    probe_only("disk:/junk/ok.bin", "ok")          # доступен -- ещё скачаем
-    # Не проверяли вовсе -- строки пробы нет.
-    db.upsert_resource(conn, {"path": "disk:/junk/u.bin", "name": "u.bin",
-                              "type": "file", "size": 50})
-    probe_only("disk:/junk/gone.bin", "gone")      # объекта уже нет
-    make(conn, "disk:/junk/saved.bin", verify="ok")  # спасён -- другой уровень
-
-    ok_junk, blocked_junk = cloud.eligible(conn, None, level="junk")
-    names = {Path(r["path"]).name for r in ok_junk}
-    assert names == {"bad.bin"}, names
-    reasons = {Path(b["path"]).name: b["reason"] for b in blocked_junk}
-    assert "скачать" in reasons["ok.bin"], reasons
-    assert "не проверено" in reasons["u.bin"], reasons
-    assert "нет" in reasons["gone.bin"], reasons
-    assert "уже спасено" in reasons["saved.bin"], reasons
-    print("уровень «мусор»: только недоступное и неспасённое")
+    try:
+        cloud.eligible(conn, None, level="junk")
+    except ValueError as exc:
+        assert "недоступности" in str(exc), exc
+    else:
+        raise AssertionError("уровень junk не должен удалять по одной пробе")
 
     disk = FakeDisk()
-    result = asyncio.run(cloud.delete(conn, disk, [], level="junk",
-                                      confirm=len(ok_junk)))
-    assert [p for p, _ in disk.deleted] == [junk_bad], disk.deleted
-    assert result["deleted"] == 1, result
+    try:
+        asyncio.run(cloud.delete(conn, disk, [junk_bad], level="junk", confirm=1))
+    except ValueError as exc:
+        assert "недоступности" in str(exc), exc
+    else:
+        raise AssertionError("cloud.delete принял небезопасный уровень junk")
+    assert disk.deleted == [], disk.deleted
     assert conn.execute("SELECT COUNT(*) FROM cloud_deleted WHERE path=?",
-                        (junk_bad,)).fetchone()[0] == 1
-    print("мусор удалён и записан в журнал")
+                        (junk_bad,)).fetchone()[0] == 0
+    print("временная недоступность не может разрешить удаление из облака")
 
     # ── 404 -- это не ошибка ────────────────────────────────────────
     # Клиент Диска, увидев пропажу файла из своей папки, удаляет

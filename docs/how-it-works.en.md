@@ -13,6 +13,14 @@ served.
 
 - The walk is checkpointed: the folder queue lives in the database, so an
   interruption resumes where it stopped. “Start over” is a checkbox in Tools.
+- Folders are listed **in batches** (`SCAN_CONCURRENCY`, 8 at a time by
+  default): the walk used to wait for the server one folder at a time, and
+  the network sat idle the whole time.
+- A folder that came back empty last time and has not changed since (the
+  server reports the same modification date) is not listed again: an empty
+  folder costs a whole request and gives nothing, and a collection has
+  thousands of them. “Full inventory” — a checkbox in Tools or `--full` on
+  the command line — checks every folder, empty ones included.
 - When the walk finishes, a cross-check runs: a file present in the previous
   inventory and missing from the current one gets `vanished_at` and stops
   counting as alive.
@@ -74,16 +82,18 @@ archive, local copies are removed.
 
 ## Delete from cloud
 
-Three strictness levels:
+Three deletion levels:
 
 | Level | What it deletes |
 |---|---|
 | downloaded | a copy exists, hash matches |
 | archived | the file is packed and the archive is verified |
-| junk | by file name, even without a copy |
+| selected | exactly the files selected in the tree |
 
 Before starting, the dialog shows how many files will go and how many are
 blocked. Deletions are recorded in `cloud_deleted`; the inventory remembers.
+Deleting “junk” from a single probe is disabled: `unavailable` or HTTP 504
+may be temporary, and a file may become available again later.
 
 ## Interface
 

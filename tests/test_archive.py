@@ -37,14 +37,21 @@ if pytest is not None:
 
     @pytest.fixture(autouse=True, scope="module")
     def _own_root():
-        """Свой корень спасения для этого файла тестов.
+        """Изолировать корень и настройки многотомного теста.
 
-        Файл задаёт DRYDOCK_ROOT при импорте, а PATHS связывается
-        один раз на процесс. Если в одном воркере оказалось несколько
-        файлов, они бы поделили корень и писали в чужую базу.
+        xdist --dist=loadfile держит файл целиком на одном worker, но worker
+        может до этого импортировать config через другой модуль; переменные
+        окружения уже не перечитаются. Поэтому важные для теста значения
+        устанавливаем после импорта и возвращаем исходные при завершении.
         """
+        old_root = config.PATHS
+        old_volume, old_reserve = config.VOLUME, config.RESERVE
         config.set_root(ROOT)
+        config.VOLUME = "1m"
+        config.RESERVE = 0
         yield
+        config.PATHS = old_root
+        config.VOLUME, config.RESERVE = old_volume, old_reserve
 
 if pytest is not None:
 
