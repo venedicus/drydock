@@ -19,6 +19,7 @@ from pathlib import Path
 # Куда спасать по умолчанию. Рядом с домашней папкой, без чужих путей:
 # конкретное место человек выбирает в интерфейсе, и оно запоминается.
 DEFAULT_SAVE_ROOT = Path.home() / "YandexDiskSaved"
+
 # Прежний путь по умолчанию: у кого программа уже работала, данные лежат
 # там. Если нового каталога ещё нет, а старый есть -- продолжаем в нём,
 # чтобы обновление не начинало с пустого места.
@@ -29,13 +30,20 @@ def _default_root() -> Path:
     if not DEFAULT_SAVE_ROOT.exists() and _LEGACY_DEFAULT_ROOT.exists():
         return _LEGACY_DEFAULT_ROOT
     return DEFAULT_SAVE_ROOT
-
 # Выбор человека -- отдельным файлом рядом с лаунчером: он переживает и
 # venv, и переустановку зависимостей, и git checkout.
-_BASE = Path(os.environ.get("LOCALAPPDATA") or Path.home())
-SETTINGS_FILE = _BASE / "Drydock" / "settings.json"
-# Прежнее имя проекта: настройки, выбранные до переименования, не теряем.
-_LEGACY_SETTINGS = _BASE / "CloudRecovery" / "settings.json"
+
+
+def settings_file() -> Path:
+    """Файл настроек. В тестах изолируется через DRYDOCK_SETTINGS или DRYDOCK_ROOT."""
+    if os.environ.get("DRYDOCK_SETTINGS"):
+        return Path(os.environ["DRYDOCK_SETTINGS"])
+    if os.environ.get("DRYDOCK_ROOT"):
+        return Path(os.environ["DRYDOCK_ROOT"]) / "settings.json"
+    _base = Path(os.environ.get("LOCALAPPDATA") or Path.home())
+    return _base / "Drydock" / "settings.json"
+_LEGACY_SETTINGS = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "CloudRecovery" / "settings.json"
+SETTINGS_FILE = settings_file()
 
 
 def settings() -> dict:
@@ -56,12 +64,114 @@ def save_settings(data: dict) -> None:
     os.replace(tmp, SETTINGS_FILE)
 
 
+def inspect_db(db_path: Path | str) -> dict | None:
+    """Проверить, является ли файл базой Drydock, и вернуть сводку."""
+    p = Path(db_path)
+    try:
+        if not p.is_file() or p.stat().st_size < 100:
+            return None
+        import sqlite3
+        conn = sqlite3.connect(p, timeout=1.0)
+        try:
+            tables = {r[0] for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+            if "resources" not in tables:
+                return None
+            files_cnt = conn.execute(
+                "SELECT COUNT(*) FROM resources WHERE type='file'").fetchone()[0]
+            saved_cnt = 0
+            if "local" in tables:
+                saved_cnt = conn.execute(
+                    "SELECT COUNT(*) FROM local WHERE verify='ok'").fetchone()[0]
+            root = p.parent
+            return {
+                "root": str(root),
+                "db_path": str(p),
+                "files_count": int(files_cnt or 0),
+                "saved_count": int(saved_cnt or 0),
+                "db_size": int(p.stat().st_size),
+                "last_modified": int(p.stat().st_mtime),
+                "has_files": (root / "files").is_dir(),
+                "has_archives": (root / "archives").is_dir(),
+            }
+        finally:
+            conn.close()
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def record_known_root(path: Path | str) -> None:
+    """Запомнить путь к папке сохранения в истории."""
+    p_str = str(Path(path))
+    data = settings()
+    roots = data.get("known_roots", [])
+    if not isinstance(roots, list):
+        roots = []
+    if p_str in roots:
+        roots.remove(p_str)
+    roots.insert(0, p_str)
+    data["known_roots"] = roots[:15]
+    db_file = Path(path) / "catalog.db"
+    if db_file.is_file():
+        data["last_known_db"] = str(db_file)
+    save_settings(data)
+
+
+def known_roots() -> list[str]:
+    data = settings()
+    roots = []
+    raw = data.get("known_roots")
+    if isinstance(raw, list):
+        roots.extend(str(r) for r in raw if r)
+    curr = data.get("save_root")
+    if curr and curr not in roots:
+        roots.insert(0, str(curr))
+    for def_root in (DEFAULT_SAVE_ROOT, _LEGACY_DEFAULT_ROOT, Path.home() / "Documents" / "YandexDiskSaved"):
+        s = str(def_root)
+        if s not in roots:
+            roots.append(s)
+    return roots
+
+
+def discover_databases() -> list[dict]:
+    """Найти существующие базы Drydock на дисках и в истории."""
+    candidates: list[Path] = []
+    for r in known_roots():
+        candidates.append(Path(r) / "catalog.db")
+    import string
+    system_drives = [f"{d}:\\" for d in string.ascii_uppercase if os.path.exists(f"{d}:\\")]
+    for drv in system_drives:
+        d_path = Path(drv)
+        for sub in ("YandexDiskSaved", "Drydock", "CloudRecovery"):
+            candidates.append(d_path / sub / "catalog.db")
+        if drv.upper() != "C:\\":
+            try:
+                for entry in os.scandir(drv):
+                    if entry.is_dir():
+                        candidates.append(Path(entry.path) / "catalog.db")
+                        candidates.append(Path(entry.path) / "YandexDiskSaved" / "catalog.db")
+            except OSError:
+                pass
+    seen_resolved: set[str] = set()
+    found: list[dict] = []
+    for cand in candidates:
+        try:
+            res_str = str(cand.resolve()) if cand.exists() else str(cand)
+        except OSError:
+            res_str = str(cand)
+        if res_str in seen_resolved:
+            continue
+        seen_resolved.add(res_str)
+        info = inspect_db(cand)
+        if info:
+            found.append(info)
+    found.sort(key=lambda x: (x["files_count"] > 0, x["last_modified"]), reverse=True)
+    return found
 # Очередь выбора корня: переменная окружения (разовый запуск, отладка) ->
 # выбор человека в окне -> значение по умолчанию.
 SAVE_ROOT = Path(os.environ.get("DRYDOCK_ROOT")
                  or settings().get("save_root")
                  or str(_default_root()))
-
 API = "https://cloud-api.yandex.net/v1/disk"
 
 # 8 потоков -- столько брал автор yandexdl, чтобы не добивать и без того
@@ -85,6 +195,7 @@ PROBE_CONCURRENCY = int(os.environ.get("DRYDOCK_PROBE_CONCURRENCY", "24"))
 # и так мгновенная, а обрез виден сразу. Выключается
 # переменной DRYDOCK_PROBE_TAIL=0, если скорость важнее точности.
 PROBE_TAIL = os.environ.get("DRYDOCK_PROBE_TAIL", "1") not in ("0", "false", "no")
+
 # С какого размера проверять хвост. Мельче -- только первый байт.
 PROBE_TAIL_MIN = int(os.environ.get("DRYDOCK_PROBE_TAIL_MIN", str(64 * 1024)))
 
@@ -124,10 +235,7 @@ def port() -> int:
     except (TypeError, ValueError):
         return DEFAULT_PORT
     return value if 1024 <= value <= 65535 else DEFAULT_PORT
-
-
 TOTALS_REFRESH_S = float(os.environ.get("DRYDOCK_TOTALS_REFRESH", "15"))
-
 PROBE_TTL_HOURS = float(os.environ.get("DRYDOCK_PROBE_TTL", "12"))
 
 # Проба доступности: мёртвый файл висит и отдаёт 504 примерно через 10 минут.
@@ -141,7 +249,6 @@ DOWNLOAD_TIMEOUT = float(os.environ.get("DRYDOCK_DOWNLOAD_TIMEOUT", "120"))
 # из четырёх: хранилище рвёт передачу часто, и ждать дважды незачем.
 DOWNLOAD_READ_TIMEOUT = float(
     os.environ.get("DRYDOCK_DOWNLOAD_READ_TIMEOUT", "40"))
-
 # Сколько раз пробовать один файл ЗА ЗАДАЧУ. Каждая попытка берёт свежую
 # ссылку -- то есть, возможно, другую машину хранилища -- и продолжает с
 # места обрыва. 18 октября без этого 67 файлов из 250 остались
@@ -163,6 +270,7 @@ DOWNLOAD_STALL_S = float(os.environ.get("DRYDOCK_STALL", "15"))
 # попытки каждый и не дали ни одного байта.
 LOOP_CONCURRENCY = int(os.environ.get("DRYDOCK_LOOP_CONCURRENCY", "48"))
 LOOP_ATTEMPTS = int(os.environ.get("DRYDOCK_LOOP_ATTEMPTS", "1"))
+
 # Как часто круг перепроверяет файлы в состоянии gone (404 GoneError).
 # Gone -- это ответ API «ресурса нет», а не больная машина хранилища:
 # 20 октября 20 418 файлов из 26 785 стояли в gone, и круг тратил на них
@@ -178,60 +286,68 @@ LOOP_COOLDOWN_MIN = float(os.environ.get("DRYDOCK_LOOP_COOLDOWN", "20"))
 # байт пробы приходит быстро -- ей 25 хватает, списку folder нет.
 API_TIMEOUT = float(os.environ.get("DRYDOCK_API_TIMEOUT", "60"))
 
+# Сколько папок опись перечисляет ОДНОВРЕМЕННО. Обход шёл строго по одной
+# папке, и сеть в это время молчала: каждый запрос -- это ожидание ответа,
+# а папок десятки тысяч, и половина из них пустые, то есть стоит ровно
+# один запрос и не даёт ничего. Восемь одновременных запросов -- это
+# секунды на сотню папок вместо минут, и нагрузка на API остаётся в
+# пределах того, что клиент и так держит (CONCURRENCY соединений).
+# Больше не значит быстрее: Яндекс начинает отдавать 429, а _api умеет
+# ждать Retry-After.
+SCAN_CONCURRENCY = int(os.environ.get("DRYDOCK_SCAN_CONCURRENCY", "8"))
+
+# Пропускать ли при описи папки, которые в прошлый раз оказались пустыми
+# и с тех пор не менялись. Пустая папка обходится одним запросом и не
+# даёт ничего, а в коллекции их тысячи -- и именно они съедали время
+# описи. Выключается, когда нужна полная перепроверка облака.
+SCAN_SKIP_EMPTY = os.environ.get("DRYDOCK_SCAN_SKIP_EMPTY", "1") not in (
+    "0", "false", "no")
 # Архивация: тома под Телеграм-премиум (лимит 4 ГБ, берём 3900 МБ).
 VOLUME = os.environ.get("DRYDOCK_VOLUME", "3900m")
+
 # -mx0: книги и так сжаты, а предсказуемый размер тома важнее процентов.
 COMPRESSION = os.environ.get("DRYDOCK_COMPRESSION", "-mx0")
+
 # Запас места, который архивация не трогает никогда.
 RESERVE = int(os.environ.get("DRYDOCK_RESERVE", str(5 * 1024**3)))
-
 PREVIEW_SIZE = "XXXL"
 BLOCK = 1024 * 1024  # шаг чтения и шаг salvage-режима
 
 
 @dataclass(frozen=True)
+
+
 class Paths:
     root: Path
-
     @property
     def files(self) -> Path:
         return self.root / "files"
-
     @property
     def meta(self) -> Path:
         return self.root / "meta"
-
     @property
     def previews(self) -> Path:
         return self.meta / "previews"
-
     @property
     def catalog_jsonl(self) -> Path:
         return self.meta / "catalog.jsonl"
-
     @property
     def archives(self) -> Path:
         return self.root / "archives"
-
     @property
     def db(self) -> Path:
         return self.root / "catalog.db"
-
     @property
     def audit(self) -> Path:
         return self.root / "audit.jsonl"
-
     def ensure(self) -> None:
         for p in (self.root, self.files, self.meta, self.previews, self.archives):
             p.mkdir(parents=True, exist_ok=True)
-
-
 PATHS = Paths(SAVE_ROOT)
 
 
 def set_root(path: Path | str) -> None:
     """Переназначить корень спасения.
-
     Нужно тестам: каждый файл тестов при импорте задаёт свой
     DRYDOCK_ROOT, а PATHS связывается один раз на процесс. Если в
     одном процессе оказалось несколько файлов тестов, они бы поделили один
@@ -244,7 +360,6 @@ def set_root(path: Path | str) -> None:
 
 def token() -> str | None:
     """Рабочий токен.
-
     Порядок: шифрованное хранилище (основной путь, умеет продлевать токен
     сам) -> YANDEX_DISK_TOKEN -> <проект>/.env -> <проект>/secrets/token.txt.
     Переменная окружения оставлена для разовых запусков и отладки.

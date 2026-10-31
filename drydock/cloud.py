@@ -42,11 +42,7 @@ from .yandex import Disk
 # Состояния local.verify, при которых файл считается спасённым полностью.
 SAFE_VERIFY = ("ok",)
 
-# Состояния пробы, при которых файл уже не спасётся: хранилище его не
-# отдаёт или проба не смогла получить ответ. "gone" сюда не входит --
-# объекта нет, удалять нечего; "unchecked" -- ещё не приговор, сначала
-# проба. Уровень "junk" чистит квоту ровно от этого.
-JUNK_STATES = ("unavailable", "api_error", "unknown")
+DELETE_LEVELS = frozenset({"downloaded", "archived", "selected"})
 
 
 def _is_file_fast(path: str) -> bool:
@@ -75,10 +71,6 @@ def eligible(conn: sqlite3.Connection, paths: list[str] | None = None, *,
 
     level="downloaded" -- достаточно проверенной копии на диске (по умолчанию)
     level="archived"   -- вдобавок нужен проверенный архив (строже)
-    level="junk"       -- не спасено и уже не спасётся: недоступно или
-                          проба не смогла ответить. Всё, что доступно,
-                          не трогаем -- его ещё можно скачать; "gone" не
-                          трогаем -- объекта уже нет, удалять нечего.
     level="selected"   -- ровно то, что человек выбрал в дереве. Проверку
                           «спасено ли» не применяем: выбор -- его решение,
                           а интерфейс отдельно предупреждает, сколько из
@@ -91,6 +83,12 @@ def eligible(conn: sqlite3.Connection, paths: list[str] | None = None, *,
     Поэтому по умолчанию хватает того, что файл скачан и его хеш сошёлся с
     тем, который сообщил сам Яндекс.
     """
+    if level not in DELETE_LEVELS:
+        raise ValueError(
+            f"неподдерживаемый уровень удаления: {level!r}; "
+            f"допустимы {', '.join(sorted(DELETE_LEVELS))}. "
+            "Удаление по одной пробе недоступности отключено: такой "
+            "вердикт не доказывает потерю файла навсегда.")
     where = ["r.type='file'", "cd.path IS NULL"]
     args: list[object] = []
     if paths:
@@ -123,21 +121,6 @@ def eligible(conn: sqlite3.Connection, paths: list[str] | None = None, *,
                 blocked.append(rec | {"reason": "в облаке уже нет -- удалять нечего"})
             else:
                 ok.append(rec)
-            continue
-        if level == "junk":
-            # Мусор -- только то, что НЕ спасено и не спасётся. Спасённое
-            # удаляется обычным уровнем, а непроверенное сначала надо
-            # проверить: это ещё не приговор.
-            if r["verify"]:
-                blocked.append(rec | {"reason": "уже спасено -- удаляй обычным уровнем"})
-            elif r["probe_state"] in JUNK_STATES:
-                ok.append(rec)
-            elif r["probe_state"] == "gone":
-                blocked.append(rec | {"reason": "в облаке уже нет -- удалять нечего"})
-            elif r["probe_state"] == "unchecked":
-                blocked.append(rec | {"reason": "не проверено -- сначала проба"})
-            else:
-                blocked.append(rec | {"reason": "доступно -- ещё можно скачать"})
             continue
         if not r["verify"]:
             blocked.append(rec | {"reason": "не скачан"})
@@ -196,8 +179,11 @@ async def delete(conn: sqlite3.Connection, disk: Disk, paths: list[str], *,
 
     lock = asyncio.Lock()
     done = {"deleted": 0, "failed": 0, "errors": []}
+    stop = db.CancelWatch(conn, job_id)
 
     async def one(rec: dict) -> None:
+        if stop():
+            return
         ok, detail = await disk.delete(rec["path"], permanently=permanently)
         # 404 = объекта уже нет. Так бывает штатно: клиент Яндекс.Диска
         # видит, что файл убран из его папки (мы перенесли), и удаляет
@@ -238,8 +224,9 @@ async def delete(conn: sqlite3.Connection, disk: Disk, paths: list[str], *,
                                 done["deleted"] + done.get("already", 0) + done["failed"],
                                 len(allowed), f"удалено {done['deleted']}")
 
-    for i in range(0, len(allowed), 50):
-        if job_id is not None and db.job_cancelled(conn, job_id):
-            break
-        await asyncio.gather(*(one(r) for r in allowed[i:i + 50]))
+    async with stop:
+        for i in range(0, len(allowed), 50):
+            if stop():
+                break
+            await asyncio.gather(*(one(r) for r in allowed[i:i + 50]))
     return done | {"blocked": len(blocked)}

@@ -24,7 +24,10 @@ import logging
 import os
 import shutil
 import sqlite3
+import time
+from collections import deque
 from pathlib import Path
+from threading import Lock
 
 import httpx
 
@@ -52,20 +55,126 @@ def _hashes(path: Path) -> tuple[str, str]:
 # случилось -- диск кончился, SQLite упал с «database or disk is full»,
 # задача #138 умерла вместе с очередью.
 _inflight = 0
+_SPACE_LOCK = Lock()
 
+
+class SpaceClaim:
+    """Динамический резерв дискового пространства с защитой от двойного вычитания.
+
+    Раньше резервировался expect_size на весь период выгрузки. Пока файл
+    качался, записанные чанки физически уменьшали свободное место на диске,
+    а _inflight продолжал держать полный expect_size. При параллельных потоках
+    это приводило к ложным 'no_space'. Теперь _inflight держит только
+    ЕЩЁ НЕ ЗАПИСАННЫЙ остаток резерва, а существующий .part учитывается сразу.
+    """
+
+    def __init__(self, size: int) -> None:
+        self.remaining = max(0, size)
+        self.claimed = False
+
+    def claim(self) -> bool:
+        global _inflight
+        with _SPACE_LOCK:
+            if self.remaining == 0:
+                self.claimed = True
+                return True
+            if free_space(config.PATHS.files) - self.remaining - _inflight < config.RESERVE:
+                return False
+            _inflight += self.remaining
+            self.claimed = True
+            return True
+
+    def on_bytes_written(self, n: int) -> None:
+        global _inflight
+        with _SPACE_LOCK:
+            if not self.claimed or n <= 0 or self.remaining <= 0:
+                return
+            delta = min(self.remaining, n)
+            self.remaining -= delta
+            _inflight = max(0, _inflight - delta)
+
+    def release(self) -> None:
+        global _inflight
+        with _SPACE_LOCK:
+            if self.claimed and self.remaining > 0:
+                _inflight = max(0, _inflight - self.remaining)
+                self.remaining = 0
+            self.claimed = False
+
+
+
+
+class SpeedMeter:
+    """Измерение мгновенной скорости выгрузки и расчёт ETA."""
+
+    def __init__(self, window_s: float = 3.0) -> None:
+        self.window_s = window_s
+        self.samples: deque[tuple[float, int]] = deque()
+        self.lock = Lock()
+        self.bytes_total: int = 0
+        self.bytes_done: int = 0
+
+    def record(self, nbytes: int) -> None:
+        now = time.monotonic()
+        with self.lock:
+            self.samples.append((now, nbytes))
+            self.bytes_done += nbytes
+            cutoff = now - self.window_s
+            while self.samples and self.samples[0][0] < cutoff:
+                self.samples.popleft()
+
+    def speed(self) -> float:
+        now = time.monotonic()
+        with self.lock:
+            cutoff = now - self.window_s
+            while self.samples and self.samples[0][0] < cutoff:
+                self.samples.popleft()
+            if not self.samples:
+                return 0.0
+            total = sum(b for _, b in self.samples)
+            dt = max(0.2, now - self.samples[0][0])
+            return total / dt
+
+    def reset(self, total_bytes: int = 0) -> None:
+        with self.lock:
+            self.samples.clear()
+            self.bytes_total = total_bytes
+            self.bytes_done = 0
+
+    def stats(self) -> dict:
+        spd = self.speed()
+        with self.lock:
+            left = max(0, self.bytes_total - self.bytes_done)
+            eta = (left / spd) if spd > 1024 and self.bytes_total > 0 else None
+            return {
+                "speed_bps": round(spd, 1),
+                "eta_s": round(eta, 1) if eta is not None else None,
+                "bytes_done": self.bytes_done,
+                "bytes_total": self.bytes_total,
+            }
+
+_GLOBAL_SPEED = SpeedMeter()
+
+
+def current_stats() -> dict:
+    """Текущие метрики скорости и остатка байт для задач выгрузки."""
+    return _GLOBAL_SPEED.stats()
 
 def _claim_space(size: int) -> bool:
     """Зарезервировать место под файл с учётом уже начатых выгрузок."""
     global _inflight
-    if free_space(config.PATHS.files) - size - _inflight < config.RESERVE:
-        return False
-    _inflight += size
-    return True
+    needed = max(0, size)
+    with _SPACE_LOCK:
+        if free_space(config.PATHS.files) - needed - _inflight < config.RESERVE:
+            return False
+        _inflight += needed
+        return True
 
 
 def _release_space(size: int) -> None:
     global _inflight
-    _inflight = max(0, _inflight - size)
+    with _SPACE_LOCK:
+        _inflight = max(0, _inflight - size)
 
 def free_space(path: Path) -> int:
     probe = Path(path)
@@ -155,7 +264,11 @@ async def download_one(conn: sqlite3.Connection, disk: Disk, path: str, *,
             and Path(extended(target)).exists():
         return {"path": path, "state": "skipped"}
 
-    if not _claim_space(expect_size):
+    part_p = Path(extended(part))
+    existing_part = part_p.stat().st_size if part_p.exists() else 0
+    needed = max(0, expect_size - existing_part)
+    claim = SpaceClaim(needed)
+    if not claim.claim():
         return {"path": path, "state": "no_space"}
 
     try:
@@ -165,10 +278,11 @@ async def download_one(conn: sqlite3.Connection, disk: Disk, path: str, *,
             # в счётчик failed, а не уронить порцию.
             ensure_parent(target)
             if salvage:
-                written, holes = await _salvage(disk, path, part, expect_size)
+                written, holes = await _salvage(disk, path, part, expect_size,
+                                                 claim=claim)
             else:
                 written, holes = await _straight(disk, path, part, expect_size,
-                                                 attempts)
+                                                 attempts, claim=claim)
         except Exception as exc:  # noqa: BLE001 - один файл не роняет порцию
             # Хост в сообщении: без него «getaddrinfo failed» не говорит, кто
             # именно не разрешился -- узел хранилища, которого уже нет в DNS,
@@ -185,10 +299,11 @@ async def download_one(conn: sqlite3.Connection, disk: Disk, path: str, *,
             return {"path": path, "state": "failed",
                     "error": f"{type(exc).__name__}: {exc}"}
 
-        md5, sha = _hashes(part)
+        md5, sha = await asyncio.to_thread(_hashes, part)
         if holes:
             verify = "salvaged"
-        elif row["sha256"] and sha.lower() == str(row["sha256"]).lower() or row["md5"] and md5.lower() == str(row["md5"]).lower():
+        elif ((row["sha256"] and sha.lower() == str(row["sha256"]).lower())
+              or (row["md5"] and md5.lower() == str(row["md5"]).lower())):
             verify = "ok"
         elif not row["sha256"] and not row["md5"]:
             verify = "unverified"
@@ -217,7 +332,7 @@ async def download_one(conn: sqlite3.Connection, disk: Disk, path: str, *,
         return record
 
     finally:
-        _release_space(expect_size)
+        claim.release()
 
 
 def save_local(conn: sqlite3.Connection, path: str, target: Path, written: int,
@@ -243,7 +358,8 @@ def save_local(conn: sqlite3.Connection, path: str, target: Path, written: int,
 
 
 async def _straight(disk: Disk, path: str, part: Path, expect: int,
-                    attempts: int | None = None) -> tuple[int, list]:
+                    attempts: int | None = None, *,
+                    claim: SpaceClaim | None = None) -> tuple[int, list]:
     """Обычная выгрузка: докачка и повторы ВНУТРИ задачи.
 
     Хранилище рвёт передачу на середине (ReadTimeout, «peer closed
@@ -272,7 +388,7 @@ async def _straight(disk: Disk, path: str, part: Path, expect: int,
             break
         before = written
         try:
-            written = await _pull(disk, path, part, written, expect)
+            written = await _pull(disk, path, part, written, expect, claim=claim)
         except (httpx.TimeoutException, httpx.TransportError, OSError) as exc:
             last_exc = exc
             text = f"{exc}"
@@ -333,7 +449,7 @@ async def _straight(disk: Disk, path: str, part: Path, expect: int,
 
 
 async def _pull(disk: Disk, path: str, part: Path, written: int,
-                expect: int) -> int:
+                expect: int, *, claim: SpaceClaim | None = None) -> int:
     """Один заход: свежая ссылка, продолжение с written."""
     stream = await disk.open_stream(path, start=written)
     async with stream as resp:
@@ -373,10 +489,14 @@ async def _pull(disk: Disk, path: str, part: Path, written: int,
                     skip = 0
                 fh.write(chunk)
                 written += len(chunk)
+                _GLOBAL_SPEED.record(len(chunk))
+                if claim is not None:
+                    claim.on_bytes_written(len(chunk))
     return written
 
 
-async def _salvage(disk: Disk, path: str, part: Path, expect: int) -> tuple[int, list]:
+async def _salvage(disk: Disk, path: str, part: Path, expect: int, *,
+                     claim: SpaceClaim | None = None) -> tuple[int, list]:
     """Поблочное чтение с пропуском мёртвых участков.
 
     Повторяет приём из yandexdl: блок, который не отдаётся, пропускается,
@@ -392,6 +512,8 @@ async def _salvage(disk: Disk, path: str, part: Path, expect: int) -> tuple[int,
     written = 0
     with open(extended(part), "wb") as fh:  # noqa: ASYNC230 - буферизованная запись на локальный диск
         fh.truncate(expect)
+        if claim is not None:
+            claim.on_bytes_written(expect)
         for start in range(0, expect, config.BLOCK):
             end = min(start + config.BLOCK, expect) - 1
             try:
@@ -405,6 +527,7 @@ async def _salvage(disk: Disk, path: str, part: Path, expect: int) -> tuple[int,
                     async for chunk in resp.aiter_bytes(config.BLOCK):
                         fh.write(chunk)
                         got += len(chunk)
+                        _GLOBAL_SPEED.record(len(chunk))
                     written += got
             except (httpx.TimeoutException, httpx.TransportError):
                 holes.append([start, end])
@@ -609,27 +732,39 @@ async def run(conn: sqlite3.Connection, disk: Disk, paths: list[str], *,
                 db.job_progress(conn, job_id, done, len(ordered),
                                 f"спасено {counters.get('ok', 0)}")
 
-    async with stop:
-        # Порция -- это ширина параллельности: gather ждёт ВСЮ порцию, и
-        # порция в 20 сводила на нет лимит в 48 (замер 19 октября: 48
-        # потоков не дали ничего, потому что работало всё равно 20).
-        # Берём по размеру лимита, но не меньше 20 -- иначе остановка
-        # ждала бы самый медленный файл слишком долго.
-        batch = max(20, getattr(disk, "limit", 0) or config.CONCURRENCY)
-        for i in range(0, len(ordered), batch):
+    total_bytes = 0
+    if ordered:
+        try:
+            total_bytes = sum(int(r["size"] or 0) for r in conn.execute(
+                f"SELECT size FROM resources WHERE path IN ({qs}) AND type='file'", paths))
+        except Exception:  # noqa: BLE001
+            total_bytes = 0
+    _GLOBAL_SPEED.reset(total_bytes=total_bytes)
+
+    try:
+        async with stop:
+            # Порция -- это ширина параллельности: gather ждёт ВСЮ порцию, и
+            # порция в 20 сводила на нет лимит в 48 (замер 19 октября: 48
+            # потоков не дали ничего, потому что работало всё равно 20).
+            # Берём по размеру лимита, но не меньше 20 -- иначе остановка
+            # ждала бы самый медленный файл слишком долго.
+            batch = max(20, getattr(disk, "limit", 0) or config.CONCURRENCY)
+            for i in range(0, len(ordered), batch):
+                if stop():
+                    counters["cancelled"] = 1
+                    break
+                await asyncio.gather(*(one(p) for p in ordered[i:i + batch]))
+                if job_id is not None:
+                    db.job_progress(conn, job_id, min(i + batch, len(ordered)),
+                                    len(ordered))
+                if counters.get("no_space"):
+                    break
             if stop():
                 counters["cancelled"] = 1
-                break
-            await asyncio.gather(*(one(p) for p in ordered[i:i + batch]))
-            if job_id is not None:
-                db.job_progress(conn, job_id, min(i + batch, len(ordered)),
-                                len(ordered))
-            if counters.get("no_space"):
-                break
-        if stop():
-            counters["cancelled"] = 1
-    counters["failed"] = count_failures(counters)
-    return counters
+        counters["failed"] = count_failures(counters)
+        return counters
+    finally:
+        _GLOBAL_SPEED.reset()
 
 
 def count_failures(counters: dict) -> int:

@@ -30,6 +30,7 @@ import logging
 import os
 import shutil
 import sqlite3
+import uuid
 from pathlib import Path
 
 from . import config, db
@@ -162,44 +163,44 @@ def same_volume(a: Path, b: Path) -> bool:
     return anchor(a) == anchor(b)
 
 
-def _take(src: Path, dest: Path, *, mode: str = "move") -> str:
-    """Перенести, сослаться или скопировать. Возвращает способ.
+def _take(src: Path, staged: Path, *, mode: str = "move") -> str:
+    """Подготовить перенос, ссылку или копию во временном файле.
 
-    mode="move" (по умолчанию) -- файл УХОДИТ из папки клиента в нашу.
-    Клиент Диска увидит пропажу и уберёт файл из облака сам; мы, кроме
-    того, удаляем облачную копию явно после сверки хеша (см. run).
-    Внутри одного тома это os.replace -- мгновенно и без лишних байтов.
+    Источник не убирается до проверки хеша: клиент Диска иначе может
+    увидеть временное исчезновение, удалить облачную копию, а сверка
+    обнаружит mismatch уже после гонки с синхронизацией.
     """
-    ensure_parent(dest)
-    if Path(extended(dest)).exists():
-        os.remove(extended(dest))
-    if mode == "link":
+    ensure_parent(staged)
+    if mode in ("move", "link"):
         try:
-            os.link(extended(src), extended(dest))
-            return "link"
+            # На одном томе это атомарно и не требует второго места. Для
+            # move это только staging-ссылка; исходное имя остаётся до
+            # проверки хеша и установки назначения.
+            os.link(extended(src), extended(staged))
+            return "move-link" if mode == "move" else "link"
         except OSError:
-            pass  # другой том или ФС без ссылок -- копируем
-    if mode == "move":
-        try:
-            os.replace(extended(src), extended(dest))
-            return "move"
-        except OSError:
-            pass  # другой том: перенос = копия + удаление источника
+            pass  # другой том или ФС без ссылок -- безопасно копируем
     # Заглушка могла проскочить candidates (атрибуты меняются между
-    # обходом и взятием) -- или os.link/os.replace упал именно на ней
+    # обходом и взятием) -- или ссылка не сработала именно на ней
     # (WinError 362). Копировать такую нельзя: copy2 пойдёт
     # материализовывать данные из того самого облака, которое не отдаёт,
     # и поток повиснет на часы.
     if is_placeholder(src):
         raise OSError("файл в папке клиента -- заглушка без данных, "
                       "облако её не отдаёт")
-    free = shutil.disk_usage(dest.parent).free
+    free = shutil.disk_usage(staged.parent).free
     if free - src.stat().st_size < config.RESERVE:
         raise OSError("не хватает места на копию")
-    shutil.copy2(extended(src), extended(dest))
-    if mode == "move":
-        os.remove(extended(src))  # перенос: источник убираем после копии
-    return "move" if mode == "move" else "copy"
+    shutil.copy2(extended(src), extended(staged))
+    return "move-copy" if mode == "move" else "copy"
+
+
+def _discard_staged(staged: Path) -> None:
+    """Убрать подготовленную ссылку/копию, оставив исходник и назначение."""
+    try:
+        os.remove(extended(staged))
+    except FileNotFoundError:
+        pass
 
 
 def adopt_one(conn: sqlite3.Connection, item: dict, *, mode: str = "move",
@@ -207,24 +208,53 @@ def adopt_one(conn: sqlite3.Connection, item: dict, *, mode: str = "move",
     from .download import _hashes
 
     dest = local_for(item["path"], config.PATHS.files)
+    staged = dest.with_name(f"_cr_adopt_{uuid.uuid4().hex}.tmp")
     try:
-        how = _take(item["src"], dest, mode=mode)
+        how = _take(item["src"], staged, mode=mode)
+        state = "unverified"
+        md5 = sha = None
+        if verify:
+            md5, sha = _hashes(staged)
+            if ((item["sha256"] and sha.lower() == str(item["sha256"]).lower())
+                    or (item["md5"] and md5.lower() == str(item["md5"]).lower())):
+                state = "ok"
+            elif not item["sha256"] and not item["md5"]:
+                state = "unverified"
+            else:
+                state = "mismatch"
+                log.warning("хеш не сошёлся у локального %s -- файл испорчен "
+                            "или это другая версия", item["path"])
+
+        if state == "mismatch":
+            # Новый файл не прошёл сверку: назначение и источник должны
+            # остаться нетронутыми. На одном томе staging -- лишь hardlink.
+            _discard_staged(staged)
+            return {"path": item["path"], "state": state, "how": how}
+
+        # Замена назначения атомарна: существующая копия остаётся на месте,
+        # пока временный файл не прошёл проверку и не готов к установке.
+        os.replace(extended(staged), extended(dest))
+        if how in ("move-link", "move-copy"):
+            # Исходник удаляем только после того, как проверенная копия
+            # установлена. Если уборка не удалась, остаётся две копии --
+            # это безопаснее, чем потерять файл.
+            try:
+                os.remove(extended(item["src"]))
+                how = "move"
+            except OSError as exc:
+                log.warning("копия %s принята, исходник оставить не удалось: %s",
+                            item["path"], exc)
+                how = "copy"
     except OSError as exc:
+        try:
+            _discard_staged(staged)
+        except OSError as discard_exc:
+            # Не удалять исходник/назначение; staging останется рядом для
+            # восстановления, если фильтр файловой системы держит handle.
+            log.error("не удалось убрать временную копию %s: %s",
+                      staged, discard_exc)
         log.warning("не взять %s: %s", item["path"], exc)
         return {"path": item["path"], "state": "failed", "error": str(exc)}
-
-    state = "unverified"
-    md5 = sha = None
-    if verify:
-        md5, sha = _hashes(dest)
-        if item["sha256"] and sha.lower() == str(item["sha256"]).lower() or item["md5"] and md5.lower() == str(item["md5"]).lower():
-            state = "ok"
-        elif not item["sha256"] and not item["md5"]:
-            state = "unverified"
-        else:
-            state = "mismatch"
-            log.warning("хеш не сошёлся у локального %s -- файл испорчен "
-                        "или это другая версия", item["path"])
 
     conn.execute(
         """INSERT INTO local(path,local_path,bytes,sha256,md5,verify,holes,
@@ -463,7 +493,8 @@ def mirror_one(conn: sqlite3.Connection, item: dict, *,
     md5 = sha = None
     if verify and (item["sha256"] or item["md5"]):
         md5, sha = _hashes(item["disk"])
-        if item["sha256"] and sha.lower() == str(item["sha256"]).lower() or item["md5"] and md5.lower() == str(item["md5"]).lower():
+        if ((item["sha256"] and sha.lower() == str(item["sha256"]).lower())
+                or (item["md5"] and md5.lower() == str(item["md5"]).lower())):
             state = "ok"
         else:
             state = "mismatch"

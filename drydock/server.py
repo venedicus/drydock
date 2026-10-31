@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
+import contextlib
 import csv
 import hashlib
 import io
@@ -19,14 +20,17 @@ import os
 import shutil
 import sqlite3
 import subprocess
+import threading
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from starlette.requests import Request
 
 from . import archive as archive_mod
 from . import cloud, config, db, download, logging_setup, oauth, probe, scan, secretstore, tree
@@ -35,29 +39,51 @@ from .localpath import extended, local_for
 from .msg import job_msg
 from .yandex import Disk
 
-app = FastAPI(title="Drydock")
-WEB = Path(__file__).resolve().parent.parent / "web"
-
-# Порт, на котором нас запустили: от него зависит redirect URI, который
-# Яндекс должен знать заранее. Меняется в cli.serve.
-SERVE_PORT = oauth.DEFAULT_PORT
-
-_conn = None
+_local = threading.local()
 _tasks: dict[int, concurrent.futures.Future] = {}
-# Петля, в которой крутится сервер. Ловится при старте: обработчики-`def`
-# живут в потоках пула, и дотянуться до неё иначе неоткуда.
+_bg_tasks: list[asyncio.Task] = []
 MAIN_LOOP: asyncio.AbstractEventLoop | None = None
-
+SERVE_PORT = oauth.DEFAULT_PORT
+# Эти два вида работ используют одни и те же .part-файлы и глобальный
+# резерв диска/счётчик скорости. Они не должны пересекаться, даже если
+# выбраны разные кнопки: «Скачать» + «Круг» ранее писали в один файл.
+DOWNLOAD_JOB_KINDS = frozenset({"download", "download-loop"})
 
 log = logging.getLogger("drydock.server")
 
 
-def conn():
-    global _conn
-    if _conn is None:
+def conn() -> sqlite3.Connection:
+    c = getattr(_local, "conn", None)
+    expected_path = config.PATHS.db
+    if c is not None and getattr(_local, "db_path", None) != expected_path:
+        with contextlib.suppress(Exception):
+            c.close()
+        c = None
+    if c is None:
         config.PATHS.ensure()
-        _conn = db.connect(config.PATHS.db)
-    return _conn
+        c = db.connect(expected_path)
+        _local.conn = c
+        _local.db_path = expected_path
+    return c
+
+
+@asynccontextmanager
+async def lifespan(application: FastAPI):
+    await _startup()
+    yield
+    for t in _bg_tasks:
+        t.cancel()
+    for future in list(_tasks.values()):
+        future.cancel()
+    c = getattr(_local, "conn", None)
+    if c is not None:
+        with contextlib.suppress(Exception):
+            c.close()
+        _local.conn = None
+
+
+app = FastAPI(title="Drydock", lifespan=lifespan)
+WEB = Path(__file__).resolve().parent.parent / "web"
 
 
 def _repair_deleted_probe(conn) -> int:
@@ -139,39 +165,81 @@ def get_settings() -> dict:
 class SettingsBody(BaseModel):
     save_root: str
     port: int | None = None
+    action: str | None = None  # None | "copy_current" | "create_new"
 
 
 @app.post("/api/settings")
 def set_settings(body: SettingsBody) -> dict:
-    """Выбрать корень спасения и порт окна. Применяются при следующем запуске.
-
-    Переноса данных нет намеренно: 22 ГБ файлов и 278 МБ базы -- это
-    осознанное действие человека, а не счастливая случайность при клике.
-    """
+    """Выбрать корень спасения и порт окна. Применяются при следующем запуске."""
     raw = body.save_root.strip()
     if not raw:
         raise HTTPException(400, {"code": "err.emptyPath"})
     p = Path(raw)
     if not p.is_absolute():
         raise HTTPException(400, {"code": "err.fullPath"})
+
+    target_db = p / "catalog.db"
+    curr_db = config.PATHS.db
+    curr_info = config.inspect_db(curr_db)
+
+    # Если запрошено копирование текущей базы в новую папку
+    if body.action == "copy_current" and not target_db.is_file() and curr_info and curr_info["files_count"] > 0:
+        p.mkdir(parents=True, exist_ok=True)
+        src_conn = db.connect(curr_db)
+        dst_conn = db.connect(target_db)
+        try:
+            src_conn.backup(dst_conn)
+            log.info("база скопирована из %s в %s", curr_db, target_db)
+        finally:
+            dst_conn.close()
+            src_conn.close()
+
     data = config.settings()
     data["save_root"] = str(p)
     if body.port is not None:
-        # Порт проверяем здесь: 80 и 70000 одинаково не годятся.
         if not 1024 <= body.port <= 65535:
             raise HTTPException(400, {"code": "err.badPort"})
         data["port"] = int(body.port)
     config.save_settings(data)
+    config.record_known_root(p)
     log.info("выбран новый корень спасения: %s (применится при перезапуске)", p)
     out = get_settings()
-    # Отдельно и явно: что применится при следующем запуске, чтобы
-    # интерфейс не показывал старый действующий корень как сохранённый.
     out["chosen_root"] = str(p)
     out["restart_required"] = True
+    out["target_has_db"] = target_db.is_file()
+    if not target_db.is_file() and curr_info and curr_info["files_count"] > 0:
+        out["db_warning"] = "target_no_db"
+        out["current_files"] = curr_info["files_count"]
     return out
 
 
-@app.on_event("startup")
+@app.post("/api/settings/check")
+def settings_check_path(body: SettingsBody) -> dict:
+    """Проверить целевой путь перед сохранением настроек."""
+    raw = body.save_root.strip()
+    if not raw:
+        raise HTTPException(400, {"code": "err.emptyPath"})
+    p = Path(raw)
+    if not p.is_absolute():
+        raise HTTPException(400, {"code": "err.fullPath"})
+    target_db = p / "catalog.db"
+    target_info = config.inspect_db(target_db) if target_db.is_file() else None
+    curr_info = config.inspect_db(config.PATHS.db)
+    return {
+        "target_root": str(p),
+        "target_has_db": bool(target_info),
+        "target_files": target_info["files_count"] if target_info else 0,
+        "current_has_db": bool(curr_info and curr_info["files_count"] > 0),
+        "current_files": curr_info["files_count"] if curr_info else 0,
+    }
+
+
+@app.get("/api/settings/discover")
+def settings_discover() -> dict:
+    """Найти существующие базы Drydock на дисках."""
+    return {"items": config.discover_databases()}
+
+
 async def _startup() -> None:
     global MAIN_LOOP
     logging_setup.setup()
@@ -229,7 +297,7 @@ async def _startup() -> None:
                 log.debug("пересчёт итогов не удался", exc_info=True)
             await asyncio.sleep(config.TOTALS_REFRESH_S)
 
-    MAIN_LOOP.create_task(totals_watch())
+    _bg_tasks.append(MAIN_LOOP.create_task(totals_watch()))
 
     async def heartbeat() -> None:
         while True:
@@ -239,7 +307,7 @@ async def _startup() -> None:
                 pass
             await asyncio.sleep(10)
 
-    MAIN_LOOP.create_task(heartbeat())
+    _bg_tasks.append(MAIN_LOOP.create_task(heartbeat()))
 
     async def token_watch() -> None:
         """Живая проверка токена -- раз в пять минут.
@@ -266,7 +334,7 @@ async def _startup() -> None:
                 log.debug("проверка токена не удалась", exc_info=True)
             await asyncio.sleep(300)
 
-    MAIN_LOOP.create_task(token_watch())
+    _bg_tasks.append(MAIN_LOOP.create_task(token_watch()))
 
     async def autopilot_watch() -> None:
         """Круги автопилота: перепроба недоступного и забор ожившего.
@@ -287,10 +355,20 @@ async def _startup() -> None:
                 last = float(db.kv_get(c, "autopilot_last", 0) or 0)
                 if time.time() < last + config.AUTOPILOT_INTERVAL_H * 3600:
                     continue
-                if c.execute("SELECT 1 FROM jobs WHERE state='running' "
-                             "LIMIT 1").fetchone():
-                    continue
-                job_id = db.job_start(c, "autopilot", 0)
+                # Та же межпроцессная сериализация, что и в _spawn:
+                # две копии Drydock не должны обе решить, что база простаивает.
+                c.execute("BEGIN IMMEDIATE")
+                try:
+                    if c.execute("SELECT 1 FROM jobs WHERE state='running' "
+                                 "LIMIT 1").fetchone():
+                        c.rollback()
+                        continue
+                    job_id = db.job_start(c, "autopilot", 0)
+                    c.commit()
+                except BaseException:
+                    if c.in_transaction:
+                        c.rollback()
+                    raise
                 log.info("job %s (autopilot): круг", job_id)
                 try:
                     async with _disk() as disk:
@@ -307,7 +385,7 @@ async def _startup() -> None:
             except Exception:
                 log.debug("круг автопилота не удался", exc_info=True)
 
-    MAIN_LOOP.create_task(autopilot_watch())
+    _bg_tasks.append(MAIN_LOOP.create_task(autopilot_watch()))
 
     async def local_watch() -> None:
         """Сверка зеркала с диском в фоне.
@@ -329,7 +407,7 @@ async def _startup() -> None:
                 log.debug("сверка зеркала не удалась", exc_info=True)
             await asyncio.sleep(config.LOCAL_SYNC_SECONDS)
 
-    MAIN_LOOP.create_task(local_watch())
+    _bg_tasks.append(MAIN_LOOP.create_task(local_watch()))
     log.info("сервер готов, порт %s, корень %s", SERVE_PORT, config.PATHS.root)
 
 
@@ -425,13 +503,42 @@ def _spawn(kind: str, coro_factory, total: int = 0,
     писали ОДИН .part (файл выходил mismatch), а две описи затирали общий
     чекпоинт в kv. Пусть лучше будет отказ с объяснением.
     """
-    busy = conn().execute(
-        "SELECT id FROM jobs WHERE kind=? AND state='running' LIMIT 1",
-        (kind,)).fetchone()
-    if busy is not None:
-        raise HTTPException(409, {"code": "err.busy", "kind": kind,
-                                  "id": busy["id"]})
-    job_id = db.job_start(conn(), kind, total)
+    # Сериализуем выбор конфликтующих задач через BEGIN IMMEDIATE: в одном
+    # процессе вызовы приходят из пула потоков, а второй экземпляр сервера
+    # может использовать ту же базу. Проверка без транзакции пропускала
+    # гонку «оба увидели пусто -> оба начали писать один .part».
+    c = conn()
+    # Автопилот эксклюзивен относительно всех работ; обе формы выгрузки
+    # конфликтуют между собой и с автопилотом, потому что пишут в те же
+    # файлы .part и используют общий резерв места.
+    if kind == "autopilot":
+        conflict_kinds = None  # особый случай: любая running-задача
+    elif kind in DOWNLOAD_JOB_KINDS:
+        conflict_kinds = DOWNLOAD_JOB_KINDS | {"autopilot"}
+    else:
+        conflict_kinds = frozenset({kind, "autopilot"})
+    c.execute("BEGIN IMMEDIATE")
+    try:
+        if conflict_kinds is None:
+            busy = c.execute(
+                "SELECT id, kind FROM jobs WHERE state='running' LIMIT 1").fetchone()
+        else:
+            marks = ",".join("?" for _ in conflict_kinds)
+            busy = c.execute(
+                f"SELECT id, kind FROM jobs WHERE kind IN ({marks}) "
+                "AND state='running' LIMIT 1",
+                tuple(sorted(conflict_kinds))).fetchone()
+        if busy is not None:
+            c.rollback()
+            raise HTTPException(409, {"code": "err.busy",
+                                      "kind": busy["kind"],
+                                      "id": busy["id"]})
+        job_id = db.job_start(c, kind, total)
+        c.commit()
+    except BaseException:
+        if c.in_transaction:
+            c.rollback()
+        raise
 
     async def wrapper() -> None:
         # Клиент создаётся ВНУТРИ try. Снаружи его создание однажды уже
@@ -770,13 +877,19 @@ class ScanBody(BaseModel):
     # По умолчанию опись продолжается с чекпоинта: прерванный обход
     # встаёт на ту же очередь папок, а не начинает облако с корня.
     resume: bool = True
+    # Полная опись: проверить заново каждую папку, включая те, что в
+    # прошлый раз были пустыми и с тех пор не менялись. Обычная опись
+    # их пропускает -- одна пустая папка стоит запрос, а таких папок
+    # в коллекции тысячи.
+    full: bool = False
 
 
 @app.post("/api/scan")
 def start_scan(body: ScanBody) -> dict:
     async def work(disk: Disk, job_id: int) -> Any:
         result = await scan.scan(conn(), disk, body.root, job_id=job_id,
-                                 resume=body.resume)
+                                 resume=body.resume,
+                                 skip_empty=not body.full and config.SCAN_SKIP_EMPTY)
         if body.previews and not db.job_cancelled(conn(), job_id):
             result["previews"] = await scan.harvest_previews(conn(), disk, job_id=job_id)
         # Выгрузка описи в файл -- удобство, а не сама работа: каталог уже
@@ -1005,7 +1118,7 @@ class SelectionPlanBody(Selection):
     """Выбор плюс настройки, от которых зависят планы."""
     volume: str | None = None
     compression: str | None = None
-    level: str = "downloaded"
+    level: Literal["downloaded", "archived", "selected"] = "downloaded"
 
 
 @app.post("/api/selection/plan")
@@ -1152,7 +1265,11 @@ def release_archive(archive_id: int) -> dict:
 
 
 class DeleteBody(Selection):
-    level: str = "downloaded"
+    # «junk» намеренно не принимается: один ответ 504/unavailable не
+    # доказывает, что файл потерян навсегда — доступность у Яндекса плавает.
+    # Принимать произвольную строку раньше было особенно опасно: API
+    # молча воспринимал неизвестный уровень как «downloaded».
+    level: Literal["downloaded", "archived", "selected"] = "downloaded"
     confirm: int = -1
     permanently: bool = True
 
@@ -1206,7 +1323,65 @@ def cloud_delete(body: DeleteBody) -> dict:
 def jobs(limit: int = 20) -> dict:
     rows = conn().execute(
         "SELECT * FROM jobs ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
-    return {"items": [dict(r) for r in rows]}
+    items = []
+    stats = download.current_stats()
+    for r in rows:
+        d = dict(r)
+        if d.get("state") == "running" and d.get("kind") in ("download", "download-loop"):
+            if stats.get("speed_bps"):
+                d["speed_bps"] = stats["speed_bps"]
+            if stats.get("eta_s") is not None:
+                d["eta_s"] = stats["eta_s"]
+            if stats.get("bytes_done"):
+                d["bytes_done"] = stats["bytes_done"]
+            if stats.get("bytes_total"):
+                d["bytes_total"] = stats["bytes_total"]
+        items.append(d)
+    return {"items": items}
+
+
+@app.get("/api/events")
+async def events_sse(request: Request) -> StreamingResponse:
+    """Server-Sent Events: реактивный поток прогресса задач и состояния без поллинга."""
+    async def event_generator():
+        last_job_hash = None
+        ping_counter = 0
+
+        while True:
+            if await request.is_disconnected():
+                break
+
+            try:
+                jobs_data = jobs(limit=12)
+                running_items = [j for j in jobs_data["items"] if j.get("state") == "running"]
+                job_fingerprint = [(j["id"], j["state"], j["done"], j.get("speed_bps")) for j in jobs_data["items"]]
+
+                if job_fingerprint != last_job_hash or running_items:
+                    last_job_hash = job_fingerprint
+                    yield f"event: jobs\ndata: {json.dumps(jobs_data)}\n\n"
+
+                ping_counter += 1
+                if ping_counter >= 20:
+                    ping_counter = 0
+                    yield ": ping\n\n"
+
+                sleep_s = 0.5 if running_items else 2.0
+                await asyncio.sleep(sleep_s)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:  # noqa: BLE001
+                log.debug("sse error: %s", e)
+                await asyncio.sleep(2.0)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.post("/api/jobs/{job_id}/cancel")

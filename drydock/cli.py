@@ -42,9 +42,13 @@ async def cmd_scan(args) -> int:
         info = await disk.about()
         print(f"Облако: занято {human(info.get('used_space'))} "
               f"из {human(info.get('total_space'))}")
-        result = await scan.scan(conn, disk, args.root, resume=not args.restart)
+        result = await scan.scan(conn, disk, args.root, resume=not args.restart,
+                                 skip_empty=not args.full and config.SCAN_SKIP_EMPTY)
         print(f"Опись: файлов {result['files']}, папок {result['dirs']}, "
               f"объём {human(result['bytes'])}")
+        if result.get("skipped_empty"):
+            print(f"Пропущено известно пустых папок: {result['skipped_empty']} "
+                  f"(полная опись -- с --full)")
         if not args.no_previews:
             counters = await scan.harvest_previews(conn, disk)
             print(f"Превью: сохранено {counters['ok']}, нет у {counters['missing']}, "
@@ -336,6 +340,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--no-previews", action="store_true")
     p.add_argument("--restart", action="store_true",
                    help="начать опись заново, игнорируя сохранённую очередь папок")
+    p.add_argument("--full", action="store_true",
+                   help="проверить заново каждую папку, включая известно пустые")
     p.set_defaults(fn=cmd_scan, is_async=True)
 
     p = sub.add_parser("previews", help="добрать превью")

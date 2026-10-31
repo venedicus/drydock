@@ -415,6 +415,8 @@ function tilesFor(s, t_) {
 // одиннадцать чипов, и все их приходилось читать.
 function paintActions(s, t_) {
   const hasSel = !!(sel.files.size || sel.folders.size);
+  const downloadBusy = busyKinds.has("download")
+    || busyKinds.has("download-loop");
   const files = (n) => t("n.files", { n });
   // Числа под выбор: если что-то отмечено, кнопки отвечают «сколько будет
   // с ним», а не «сколько всего в коллекции».
@@ -450,7 +452,7 @@ function paintActions(s, t_) {
   $("s-loop").textContent = loopN
     ? t(p ? "act.loop.takeSel" : "act.loop.take", { size: human(loopB) })
     : t("act.loop.empty");
-  $("btn-loop").disabled = !loopN || busyKinds.has("download-loop");
+  $("btn-loop").disabled = !loopN || downloadBusy;
 
   const archN = p ? (p.arch.files || 0) : (t_.arch_ready || 0);
   $("n-archive").textContent = noInventory ? "—"
@@ -561,6 +563,12 @@ async function refreshState(fresh) {
     hintBits.push(t("scan.pending", { n: s.scan_pending,
                                       folders: t("n.folders", { n: s.scan_pending }) }));
   }
+  // Опись пропустила известно пустые папки -- сказать об этом честно:
+  // человек должен видеть, сколько папок опись не смотрела.
+  const skipped = (s.last_scan || {}).skipped_empty || 0;
+  if (skipped) {
+    hintBits.push(t("scan.skipped", { n: skipped }));
+  }
   if (s.autopilot) {
     const cfg = s.autopilot_config || {};
     hintBits.push(s.autopilot_last_at
@@ -594,6 +602,8 @@ function nodeRow(node, depth, q) {
   row.className = "node";
   row.style.paddingLeft = (depth * 16 + 8) + "px";
   row.dataset.path = node.path;
+  row.dataset.isDir = node.is_dir ? "1" : "0";
+  row.dataset.name = node.name;
   // tabindex=-1, а не 0: иначе Tab шёл бы через тысячи строк. Фокус
   // ставится стрелками, кликом и из поиска.
   row.tabIndex = -1;
@@ -720,6 +730,54 @@ function highlight(text, q) {
     + "</mark>" + safe.slice(i + needle.length);
 }
 
+const CHUNK_SIZE = 100;
+
+function renderChildrenChunk(children, depth, startIdx, anchorRow) {
+  const frag = document.createDocumentFragment();
+  const endIdx = Math.min(startIdx + CHUNK_SIZE, children.length);
+  for (let i = startIdx; i < endIdx; i++) {
+    const child = children[i];
+    const r = nodeRow(child, depth + 1);
+    r.dataset.depth = depth + 1;
+    frag.appendChild(r);
+  }
+
+  let nextAnchor = frag.lastElementChild || anchorRow;
+
+  if (endIdx < children.length) {
+    const remaining = children.length - endIdx;
+    const moreRow = document.createElement("div");
+    moreRow.className = "tree-more";
+    moreRow.dataset.depth = depth + 1;
+    moreRow.style.paddingLeft = ((depth + 1) * 16 + 8) + "px";
+    moreRow.innerHTML = `
+      <button type="button" class="ghost btn-more-chunk">${t("tree.more", { count: Math.min(CHUNK_SIZE, remaining) })}</button>
+      <button type="button" class="ghost btn-more-all">${t("tree.all", { count: remaining })}</button>`;
+
+    moreRow.querySelector(".btn-more-chunk").onclick = (e) => {
+      e.stopPropagation();
+      const currentAnchor = moreRow.previousSibling || anchorRow;
+      moreRow.remove();
+      renderChildrenChunk(children, depth, endIdx, currentAnchor);
+    };
+    moreRow.querySelector(".btn-more-all").onclick = (e) => {
+      e.stopPropagation();
+      const last = moreRow.previousSibling || anchorRow;
+      moreRow.remove();
+      const fullFrag = document.createDocumentFragment();
+      for (let i = endIdx; i < children.length; i++) {
+        const r = nodeRow(children[i], depth + 1);
+        r.dataset.depth = depth + 1;
+        fullFrag.appendChild(r);
+      }
+      last.after(fullFrag);
+    };
+    frag.appendChild(moreRow);
+  }
+
+  anchorRow.after(frag);
+}
+
 async function toggle(node, row, depth) {
   if (expanded.has(node.path)) {
     expanded.delete(node.path);
@@ -733,14 +791,8 @@ async function toggle(node, row, depth) {
   expanded.add(node.path);
   row.querySelector(".twisty").textContent = "▾";
   const data = await api("/api/tree?path=" + encodeURIComponent(node.path));
-  let anchor = row;
-  for (const child of treeChildren(data)) {
-    const r = nodeRow(child, depth + 1);
-    r.dataset.depth = depth + 1;
-    anchor.after(r);
-    anchor = r;
-    if (expanded.has(child.path) && child.is_dir) await toggle(child, r, depth + 1);
-  }
+  const children = treeChildren(data);
+  renderChildrenChunk(children, depth, 0, row);
 }
 
 // Номер поколения отрисовки. Между очисткой списка и вставкой строк есть
@@ -756,20 +808,48 @@ async function loadTree() {
   if (mine !== treeGeneration) return;
   box.innerHTML = "";
   if (!data.children.length) {
-    // Класс .detail.empty скрыт правилом .detail.empty { display: none },
-    // и подсказка «опись пуста» была невидимой: человек видел пустое поле.
     box.innerHTML = `<div class="tree-empty">${t("tree.empty")}</div>`;
     return;
   }
-  for (const child of treeChildren(data)) {
-    // Раскрытие папки тоже ходит на сервер, и за это время могла начаться
-    // новая отрисовка -- дописывать строки в чужой список незачем.
+  const children = treeChildren(data);
+  const frag = document.createDocumentFragment();
+  const endIdx = Math.min(CHUNK_SIZE, children.length);
+  for (let i = 0; i < endIdx; i++) {
     if (mine !== treeGeneration) return;
+    const child = children[i];
     const r = nodeRow(child, 0);
     r.dataset.depth = 0;
-    box.appendChild(r);
-    if (expanded.has(child.path) && child.is_dir) await toggle(child, r, 0);
+    frag.appendChild(r);
   }
+  if (endIdx < children.length) {
+    const remaining = children.length - endIdx;
+    const moreRow = document.createElement("div");
+    moreRow.className = "tree-more";
+    moreRow.dataset.depth = 0;
+    moreRow.style.paddingLeft = "8px";
+    moreRow.innerHTML = `
+      <button type="button" class="ghost btn-more-chunk">${t("tree.more", { count: Math.min(CHUNK_SIZE, remaining) })}</button>
+      <button type="button" class="ghost btn-more-all">${t("tree.all", { count: remaining })}</button>`;
+    moreRow.querySelector(".btn-more-chunk").onclick = (e) => {
+      e.stopPropagation();
+      const last = moreRow.previousSibling || box.lastElementChild;
+      moreRow.remove();
+      renderChildrenChunk(children, -1, endIdx, last);
+    };
+    moreRow.querySelector(".btn-more-all").onclick = (e) => {
+      e.stopPropagation();
+      moreRow.remove();
+      const fullFrag = document.createDocumentFragment();
+      for (let i = endIdx; i < children.length; i++) {
+        const r = nodeRow(children[i], 0);
+        r.dataset.depth = 0;
+        fullFrag.appendChild(r);
+      }
+      box.appendChild(fullFrag);
+    };
+    frag.appendChild(moreRow);
+  }
+  box.appendChild(frag);
 }
 
 // Переключатель «только нескачанное»: перерисовывает дерево с прежним
@@ -829,10 +909,12 @@ function refreshSelection() {
   // Кнопки выбора живут по его же состоянию: «Скачать выбранное» без
   // выбора выключена с пояснением, а не молча падает в alert.
   const empty = !sel.files.size && !sel.folders.size;
-  $("btn-download").disabled = empty || busyKinds.has("download");
+  const downloadBusy = busyKinds.has("download")
+    || busyKinds.has("download-loop");
+  $("btn-download").disabled = empty || downloadBusy;
   // Кнопка у выбора: появляется вместе с выбором, а не живёт всегда.
   $("btn-download-sel").classList.toggle("hidden", empty);
-  $("btn-download-sel").disabled = busyKinds.has("download");
+  $("btn-download-sel").disabled = downloadBusy;
   $("btn-download").title = empty ? t("btn.download.empty") : t("btn.download.title");
   if (empty) $("selinfo").textContent = t("sel.hint");
   else $("selinfo").textContent = t("sel.counting");
@@ -969,7 +1051,8 @@ window.hideSetup = () => {
 async function runNextStep(step) {
   try {
     if (step.kind === "start" || step.kind === "scan") {
-      await api("/api/scan", { restart: $("scan-restart").checked });
+      await api("/api/scan", { resume: !$("scan-restart").checked,
+                               full: $("scan-full").checked });
     } else if (step.kind === "download") {
       // Вся коллекция: папка-корень + только доступное + пропустить
       // спасённое -- ровно то, что советует карточка.
@@ -1035,15 +1118,15 @@ async function showDetail(path) {
   const rows = [
     [t("detail.path"), `<span class="mono">${esc(d.path)}</span>`],
     [t("detail.size"), human(d.size)],
-    [t("detail.type"), d.mime || "—"],
-    [t("detail.modified"), d.modified || "—"],
-    [t("detail.availability"), `<b>${d.probe_state}</b>`
+    [t("detail.type"), esc(d.mime || "—")],
+    [t("detail.modified"), esc(d.modified || "—")],
+    [t("detail.availability"), `<b>${esc(d.probe_state)}</b>`
       + (d.http_status ? ` (HTTP ${d.http_status})` : "") + staleMark],
     d.detail ? [t("detail.serverResponse"), `<span class="mono">${esc(d.detail)}</span>`] : null,
     d.storage_host ? [t("detail.storageHost"), `<span class="mono">${esc(d.storage_host)}</span>`] : null,
     checked ? [t("detail.checked"), checked] : null,
-    [t("detail.md5"), `<span class="mono">${d.md5 || "—"}</span>`],
-    [t("detail.sha256"), `<span class="mono">${d.sha256 || "—"}</span>`],
+    [t("detail.md5"), `<span class="mono">${esc(d.md5 || "—")}</span>`],
+    [t("detail.sha256"), `<span class="mono">${esc(d.sha256 || "—")}</span>`],
     d.local_path && d.verify
       ? [t("detail.localPath"),
          d.local_missing
@@ -1059,7 +1142,7 @@ async function showDetail(path) {
       `${d.verify}${d.released ? t("detail.spaceFreed") : ""}`
       + (d.local_missing ? ` ${t("detail.localMissingShort")}` : "")] : null,
     d.holes ? [t("detail.holes"), `<span class="mono">${esc(d.holes)}</span>`] : null,
-    [t("detail.previewState"), d.preview_state || "—"],
+    [t("detail.previewState"), esc(d.preview_state || "—")],
   ].filter(Boolean);
   $("detail").className = "detail";
   $("detail").innerHTML =
@@ -1087,47 +1170,76 @@ const JOB_BUTTONS = {
 // строке его нет -- он в подсказке.
 let hiddenUpTo = Number(localStorage.getItem("cr-jobs-hidden") || 0);
 
+function formatSpeed(bps) {
+  if (!bps || bps < 1024) return "";
+  return humanSize(bps) + "/s";
+}
+
+function formatEta(seconds) {
+  if (!seconds || seconds <= 0 || !isFinite(seconds)) return "";
+  const s = Math.round(seconds);
+  if (s < 60) return `${s} ${t("unit.s")}`;
+  const m = Math.floor(s / 60);
+  const remS = s % 60;
+  if (m < 60) return `${m} ${t("unit.m")} ${remS ? remS + " " + t("unit.s") : ""}`;
+  const h = Math.floor(m / 60);
+  const remM = m % 60;
+  return `${h} ${t("unit.h")} ${remM ? remM + " " + t("unit.m") : ""}`;
+}
+
+function handleJobsData(data) {
+  const running = data.items.filter((j) => j.state === "running");
+  setWindowTitle(running);
+  const maxId = data.items.reduce((m, j) => Math.max(m, j.id), 0);
+  localStorage.setItem("cr-jobs-last", String(maxId));
+  renderActive(running);
+  renderFinished(data.items.filter((j) => j.state !== "running"));
+  for (const j of data.items) {
+    if (j.state !== "running") stopping.delete(j.id);
+  }
+  const wasBusy = busyKinds;
+  busyKinds = new Set(running.map((j) => j.kind));
+  if (lastState) paintActions(lastState, lastTotals || {});
+  if (wasBusy.has("download-loop") && !busyKinds.has("download-loop")) {
+    const loop = data.items.find((j) => j.kind === "download-loop");
+    if (loop) toast(jobText(loop.message) || t("loop.finished"));
+  }
+  wasRunning = running.length > 0;
+}
+
+let sseSource = null;
+
+function initSSE() {
+  if (!window.EventSource) return;
+  try {
+    sseSource = new EventSource("/api/events");
+    sseSource.addEventListener("jobs", (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        handleJobsData(data);
+      } catch (err) {
+        console.warn("SSE parse error", err);
+      }
+    });
+    sseSource.onerror = () => {
+      // Браузер сам переподключает EventSource, а pollJobs страхует
+    };
+  } catch (e) {
+    console.warn("SSE initialization failed", e);
+  }
+}
+
 async function pollJobs() {
   try {
     const data = await api("/api/jobs?limit=12");
-    const running = data.items.filter((j) => j.state === "running");
-    setWindowTitle(running);
-    const maxId = data.items.reduce((m, j) => Math.max(m, j.id), 0);
-    localStorage.setItem("cr-jobs-last", String(maxId));
-    renderActive(running);
-    renderFinished(data.items.filter((j) => j.state !== "running"));
-    for (const j of data.items) {
-      if (j.state !== "running") stopping.delete(j.id);
-    }
-    // Пока работа идёт, её кнопка неактивна: сервер всё равно откажет
-    // (409), но лучше не доводить до отказа. Стоп -- в карточке «Сейчас».
-    //
-    // Раньше здесь стояло `el.disabled = busy.has(kind)`, и каждый опрос
-    // снимал блокировку, поставленную по данным: «Архив» и «Удалить из
-    // облака» становились активными при пустой описи. Теперь занятость
-    // только складывается с решением paintActions.
-    const wasBusy = busyKinds;
-    busyKinds = new Set(running.map((j) => j.kind));
-    if (lastState) paintActions(lastState, lastTotals || {});
-    // Работа идёт часами и может закончиться, пока окно свёрнуто. Скажем
-    // об этом тостом: молча закончившаяся работа выглядит как зависание.
-    // Сам круг от окна не зависит: он живёт на локальном сервере.
-    if (wasBusy.has("download-loop") && !busyKinds.has("download-loop")) {
-      const loop = data.items.find((j) => j.kind === "download-loop");
-      if (loop) toast(jobText(loop.message) || t("loop.finished"));
-    }
-    // В простое состояние тоже опрашивается, просто редко: по нему окно
-    // узнаёт, что программу обновили, и перезагружает себя. Без этого
-    // открытое без задач окно жило бы со старым интерфейсом сколько угодно.
-    const every = running.length ? 5000 : 30000;
+    handleJobsData(data);
+    const every = busyKinds.size ? 5000 : 30000;
     if (Date.now() - lastStateAt > every) await refreshState();
-    // Работа закончилась -- показываем итог сразу и без кэша.
-    if (!running.length && wasRunning) await refreshState(true);
-    wasRunning = running.length > 0;
+    if (!busyKinds.size && wasRunning) await refreshState(true);
   } catch (e) { /* сервер мог перезапуститься -- просто пробуем снова */ }
-  // В простое незачем спрашивать каждые полторы секунды: задача идёт --
-  // 1.5 с, ничего не происходит -- 5 с.
-  setTimeout(pollJobs, wasRunning ? 1500 : 5000);
+  const isSSEActive = sseSource && sseSource.readyState === EventSource.OPEN;
+  const delay = isSSEActive ? (wasRunning ? 4000 : 15000) : (wasRunning ? 1500 : 5000);
+  setTimeout(pollJobs, delay);
 }
 
 // Прогресс в заголовке окна: круг идёт часами, окно свёрнуто, и узнать
@@ -1159,12 +1271,17 @@ function renderActive(list) {
   card.innerHTML = `<h4>${t("now.title")}</h4>` + list.map((j) => {
     const indet = !j.total;
     const pct = indet ? 0 : Math.min(100, Math.round(100 * j.done / j.total));
+    const speedStr = j.speed_bps ? formatSpeed(j.speed_bps) : "";
+    const etaStr = j.eta_s ? formatEta(j.eta_s) : "";
+    const speedMeta = (speedStr || etaStr)
+      ? `<span class="job-speed">${speedStr}</span>${etaStr ? ` <span class="job-eta">· ~${etaStr}</span>` : ""}`
+      : "";
     return `<div class="now-row" title="${t("jobs.id", { id: j.id })}">
       <div class="row2">
         <span class="nm">${t("job." + j.kind)}</span>
         <div class="bar${indet ? " indet" : ""}"><i style="width:${
           indet ? 35 : pct}%"></i></div>
-        <span class="dim">${j.done}${j.total ? " / " + j.total : ""}</span>
+        <span class="dim">${j.done}${j.total ? " / " + j.total : ""}${speedMeta}</span>
         ${stopping.has(j.id)
           ? `<button class="ghost" disabled>${t("btn.stopping")}</button>`
           : `<button class="ghost" onclick="cancelJob(${j.id}, this)">${
@@ -1282,7 +1399,176 @@ async function hostsModal() {
 // («сохранить страницу», «просмотр кода», «вставить») здесь не нужно
 // нигде -- ни на кнопках, ни на полях ввода, ни на чекбоксах.
 // Блокируем только меню: выделение текста, Ctrl+C и Ctrl+V работают.
-document.addEventListener("contextmenu", (e) => e.preventDefault());
+
+let ctxMenuEl = null;
+
+function ensureContextMenu() {
+  if (!ctxMenuEl) {
+    ctxMenuEl = document.createElement("div");
+    ctxMenuEl.id = "tree-ctx";
+    ctxMenuEl.className = "tree-ctx hidden";
+    ctxMenuEl.setAttribute("role", "menu");
+    document.body.appendChild(ctxMenuEl);
+
+    document.addEventListener("click", (e) => {
+      if (ctxMenuEl && !ctxMenuEl.contains(e.target)) {
+        closeContextMenu();
+      }
+    });
+
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") closeContextMenu();
+    });
+  }
+  return ctxMenuEl;
+}
+
+function closeContextMenu() {
+  if (ctxMenuEl) ctxMenuEl.classList.add("hidden");
+}
+
+function openTreeContextMenu(x, y, path, isDir, name) {
+  const menu = ensureContextMenu();
+  const items = [];
+
+  if (isDir) {
+    items.push({
+      label: t("ctx.downloadDir"),
+      icon: "⇩",
+      onClick: async () => {
+        closeContextMenu();
+        try {
+          await api("/api/download", { folders: [path], paths: [] });
+          await refreshState();
+          await pollJobs();
+        } catch (e) { toast(e.message, "err"); }
+      }
+    });
+    items.push({
+      label: t("ctx.probeDir"),
+      icon: "⚡",
+      onClick: async () => {
+        closeContextMenu();
+        try {
+          await api("/api/probe", { folders: [path], paths: [], states: null });
+          await refreshState();
+          await pollJobs();
+        } catch (e) { toast(e.message, "err"); }
+      }
+    });
+    items.push({ sep: true });
+    items.push({
+      label: t("ctx.selectAll"),
+      icon: "✓",
+      onClick: () => {
+        closeContextMenu();
+        sel.folders.add(path);
+        const row = document.querySelector(`.node[data-path="${CSS.escape(path)}"]`);
+        if (row) {
+          const cb = row.querySelector("input[type=checkbox]");
+          if (cb) cb.checked = true;
+        }
+        refreshSelection();
+      }
+    });
+  } else {
+    items.push({
+      label: t("ctx.download"),
+      icon: "⇩",
+      onClick: async () => {
+        closeContextMenu();
+        try {
+          await api("/api/download", { paths: [path], folders: [] });
+          await refreshState();
+          await pollJobs();
+        } catch (e) { toast(e.message, "err"); }
+      }
+    });
+    items.push({
+      label: t("ctx.probe"),
+      icon: "⚡",
+      onClick: async () => {
+        closeContextMenu();
+        try {
+          await api("/api/probe", { paths: [path], folders: [], states: null });
+          await refreshState();
+          await pollJobs();
+        } catch (e) { toast(e.message, "err"); }
+      }
+    });
+    items.push({
+      label: t("ctx.reveal"),
+      icon: "📂",
+      onClick: () => {
+        closeContextMenu();
+        revealFile(encodeURIComponent(path));
+      }
+    });
+    items.push({
+      label: t("ctx.detail"),
+      icon: "ℹ",
+      onClick: () => {
+        closeContextMenu();
+        showDetail(path);
+      }
+    });
+    items.push({ sep: true });
+    items.push({
+      label: t("ctx.copyName"),
+      icon: "📋",
+      onClick: async () => {
+        closeContextMenu();
+        try {
+          await navigator.clipboard.writeText(name || path.split("/").pop());
+          toast(t("ctx.nameCopied"));
+        } catch (e) { toast(e.message, "err"); }
+      }
+    });
+  }
+
+  items.push({
+    label: t("ctx.copyPath"),
+    icon: "🔗",
+    onClick: async () => {
+      closeContextMenu();
+      try {
+        await navigator.clipboard.writeText(path);
+        toast(t("ctx.copied"));
+      } catch (e) { toast(e.message, "err"); }
+    }
+  });
+
+  menu.innerHTML = items.map((it, idx) => {
+    if (it.sep) return `<div class="tree-ctx-sep"></div>`;
+    return `<div class="tree-ctx-item" data-idx="${idx}">
+      <span class="ico">${it.icon || ""}</span>
+      <span>${esc(it.label)}</span>
+    </div>`;
+  }).join("");
+
+  menu.querySelectorAll(".tree-ctx-item").forEach((el) => {
+    const it = items[Number(el.dataset.idx)];
+    if (it && it.onClick) el.onclick = it.onClick;
+  });
+
+  menu.classList.remove("hidden");
+  const menuW = 210;
+  const menuH = menu.offsetHeight || 180;
+  const clampedX = Math.min(x, window.innerWidth - menuW - 10);
+  const clampedY = Math.min(y, window.innerHeight - menuH - 10);
+  menu.style.left = `${Math.max(10, clampedX)}px`;
+  menu.style.top = `${Math.max(10, clampedY)}px`;
+}
+
+document.addEventListener("contextmenu", (e) => {
+  e.preventDefault();
+  const row = e.target.closest(".node");
+  if (row && row.dataset.path) {
+    openTreeContextMenu(e.clientX, e.clientY, row.dataset.path, row.dataset.isDir === "1", row.dataset.name);
+  } else {
+    closeContextMenu();
+  }
+});
 
 // Кнопки с путём и узлом вешаем делегированием, а не строкой в onclick:
 // апостроф в имени файла (O'Brien.docx) ломал такой обработчик -- строка
@@ -1637,8 +1923,12 @@ window.settingsModal = async () => {
   const s = await api("/api/settings");
   modal(t("set.title"),
     `<p>${t("set.body")}</p>
-     <input id="set-root" type="text" value="${attrEsc(s.save_root)}"
-            style="width:100%;margin:6px 0">
+     <div style="display:flex;gap:6px;align-items:center;margin:6px 0">
+       <input id="set-root" type="text" value="${attrEsc(s.chosen_root || s.save_root)}"
+              style="flex:1">
+       <button id="btn-discover-db" type="button" class="ghost" style="white-space:nowrap" title="${attrEsc(t("set.discover.tip"))}">${t("set.discover")}</button>
+     </div>
+     <div id="set-discover-results" style="display:none;margin:8px 0;max-height:160px;overflow-y:auto;font-size:12px;border:1px solid var(--border);border-radius:4px;padding:6px;background:var(--bg-card)"></div>
      <p class="dim">${t("set.db", { db: esc(s.db) })}</p>
      <label class="set-port">${t("set.port")}
        <input id="set-port" type="number" min="1024" max="65535"
@@ -1650,15 +1940,78 @@ window.settingsModal = async () => {
         : `<div class="warnbox">${t("set.restart")}</div>`}`,
     [{ label: t("btn.cancel"), cls: "ghost", onClick: closeModal },
      { label: t("btn.save"), cls: "primary", onClick: async () => {
-        const r = await api("/api/settings", {
-          save_root: $("set-root").value,
-          port: Number($("set-port").value) || undefined,
-        });
-        toast(t("set.saved", { root: r.chosen_root || r.save_root }) + "\n\n"
-              + t("set.restart"));
-        closeModal();
-        await refreshState(true);
+        const rootVal = $("set-root").value.trim();
+        const portVal = Number($("set-port").value) || undefined;
+        if (!rootVal) return;
+
+        const saveConfig = async (action) => {
+          const r = await api("/api/settings", {
+            save_root: rootVal,
+            port: portVal,
+            action: action || undefined,
+          });
+          toast(t("set.saved", { root: r.chosen_root || r.save_root }) + "\n\n"
+                + t("set.restart"));
+          closeModal();
+          await refreshState(true);
+        };
+
+        try {
+          const check = await api("/api/settings/check", { save_root: rootVal });
+          if (check.current_has_db && !check.target_has_db) {
+            modal(t("set.dbDecisionTitle"),
+              `<p>${t("set.dbDecisionBody", { current: check.current_files, root: esc(rootVal) })}</p>
+               <div class="warnbox" style="margin:8px 0">${t("set.dbDecisionWarn")}</div>`,
+              [
+                { label: t("btn.cancel"), cls: "ghost", onClick: () => settingsModal() },
+                { label: t("set.btnCreateNew"), cls: "ghost", onClick: () => saveConfig("create_new") },
+                { label: t("set.btnCopyCurrent"), cls: "primary", onClick: () => saveConfig("copy_current") },
+              ]
+            );
+            return;
+          }
+          await saveConfig();
+        } catch (e) {
+          toast(e.message, "err");
+        }
       } }]);
+
+  const btnDiscover = $("btn-discover-db");
+  if (btnDiscover) {
+    btnDiscover.onclick = async () => {
+      btnDiscover.disabled = true;
+      btnDiscover.textContent = t("set.discovering");
+      const box = $("set-discover-results");
+      try {
+        const res = await api("/api/settings/discover");
+        box.style.display = "block";
+        if (!res.items || !res.items.length) {
+          box.innerHTML = `<div class="dim" style="padding:4px">${t("set.discoverNone")}</div>`;
+          return;
+        }
+        box.innerHTML = `<div style="font-weight:600;margin-bottom:6px">${t("set.discoverFound")}:</div>` +
+          res.items.map((it) => `
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid var(--border);gap:8px">
+              <div style="overflow:hidden;text-overflow:ellipsis" title="${attrEsc(it.root)}">
+                <div style="font-weight:500;word-break:break-all">${esc(it.root)}</div>
+                <div class="dim">${t("set.dbFiles", { count: it.files_count })}${it.saved_count ? ` · ${t("set.dbSaved", { count: it.saved_count })}` : ""}</div>
+              </div>
+              <button type="button" class="ghost db-pick-btn" data-root="${attrEsc(it.root)}" style="padding:2px 8px;font-size:11px;white-space:nowrap">${t("set.select")}</button>
+            </div>
+          `).join("");
+        box.querySelectorAll(".db-pick-btn").forEach((b) => {
+          b.onclick = () => {
+            $("set-root").value = b.dataset.root;
+          };
+        });
+      } catch (err) {
+        toast(err.message, "err");
+      } finally {
+        btnDiscover.disabled = false;
+        btnDiscover.textContent = t("set.discover");
+      }
+    };
+  }
 };
 wrap($("btn-settings"), () => settingsModal());
 
@@ -1681,9 +2034,12 @@ wrap($("btn-probe-quick"), async () => {
 wrap($("btn-scan"), async () => {
   // Прерванная опись продолжается с чекпоинта (очередь папок в базе),
   // но галочка «начать заново» отдаёт челу выбор -- как он и просил.
+  // Галочка «полная опись» снимает пропуск известно пустых папок: их
+  // перечислять не нужно, пока сервер не сдвинул дату изменения.
   await api("/api/scan", {
     root: "disk:/", previews: true,
     resume: !$("scan-restart").checked,
+    full: $("scan-full").checked,
   });
 });
 
@@ -2410,5 +2766,6 @@ $("search").addEventListener("keydown", (e) => {
     refreshSelection();
   }
   await loadTree();
+  initSSE();
   await pollJobs();
 })();

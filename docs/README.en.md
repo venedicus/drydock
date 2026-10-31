@@ -28,7 +28,7 @@ MIT · Windows · Python 3.12+ · not affiliated with Yandex
 | **Probe** | checks availability without downloading: first and last byte |
 | **Loop** | downloads everything that is served and re-checks the rest until stopped |
 | **Archive** | packs what was rescued into 3.9 GB volumes, 1.9 GB volumes or a single file |
-| **Delete** | frees the cloud with what is already verified; three strictness levels |
+| **Delete** | frees cloud space in three modes: verified copy, archived copy, or manual selection |
 | **Health** | shows why it fails: reasons, nodes, jobs |
 | **Export** | writes the inventory to CSV or JSON: path, size, availability, hashes, where the rescued copy is |
 
