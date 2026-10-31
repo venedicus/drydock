@@ -94,21 +94,34 @@ def _register(conn: sqlite3.Connection, path: str, full: str, size: int) -> None
 
 
 def scan_disk(root: Path | None = None,
-              known: set[str] | None = None) -> dict[str, tuple[str, int | None]]:
+              known: set[str] | None = None,
+              *,
+              by_local_path: dict[str, str] | None = None) -> dict[str, tuple[str, int | None]]:
     """Что лежит в зеркале: cloud-путь -> (локальный путь, размер).
 
     Размер нужен только НОВЫМ файлам: для уже известных хватает самого
     факта наличия, а stat на каждый из 7,8 тыс. файлов стоил больше
     самого обхода (замер 18 октября: 3.6 с против 1.4 с).
+
+    by_local_path сопоставляет нормализованный локальный путь с cloud-путем:
+    это защищает файлы с символами, замененными на Unicode (\uf03a вместо :),
+    укороченными именами или зарезервированными именами от ложного missing=1
+    и создания дубликатов.
     """
     files_root = root or config.PATHS.files
     known = known or set()
+    local_lookup = by_local_path or {}
     out: dict[str, tuple[str, int | None]] = {}
     for dirpath, _dirnames, filenames in os.walk(files_root):
         for name in filenames:
             if name.endswith(".part"):
                 continue  # недокачанное -- не «сохранено»
             full = os.path.join(dirpath, name)
+            norm_full = os.path.normcase(os.path.abspath(full))
+            if norm_full in local_lookup:
+                cloud_path = local_lookup[norm_full]
+                out[cloud_path] = (full, None)
+                continue
             rel = os.path.relpath(full, files_root).replace(os.sep, "/")
             path = "disk:/" + rel
             if path in known:
@@ -128,22 +141,32 @@ def sync(conn: sqlite3.Connection, root: Path | None = None) -> dict:
 
 
 def _sync(conn: sqlite3.Connection, root: Path | None = None) -> dict:
-    rows = {r["path"]: r for r in conn.execute(
-        "SELECT path, missing FROM local")}
-    on_disk = scan_disk(root, set(rows))
+    rows_raw = conn.execute(
+        "SELECT path, local_path, missing, released FROM local").fetchall()
+    by_cloud: dict[str, sqlite3.Row] = {r["path"]: r for r in rows_raw}
+    by_local: dict[str, str] = {}
+    for r in rows_raw:
+        lp = r["local_path"]
+        if lp:
+            by_local[os.path.normcase(os.path.abspath(lp))] = r["path"]
+
+    on_disk = scan_disk(root, set(by_cloud), by_local_path=by_local)
 
     added = restored = vanished = 0
     conn.execute("BEGIN")
     try:
         for path, (full, size) in on_disk.items():
-            row = rows.get(path)
+            row = by_cloud.get(path)
             if row is None:
                 _register(conn, path, full, size or 0)
                 added += 1
             elif row["missing"]:
                 conn.execute("UPDATE local SET missing=0 WHERE path=?", (path,))
                 restored += 1
-        for path, row in rows.items():
+        for path, row in by_cloud.items():
+            # Если файл освобожден после архивации, отсутствие на диске штатно
+            if row["released"]:
+                continue
             if path in on_disk or row["missing"]:
                 continue
             conn.execute("UPDATE local SET missing=1 WHERE path=?", (path,))

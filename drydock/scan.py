@@ -61,7 +61,9 @@ def _totals(conn: sqlite3.Connection, root: str) -> tuple[int, int, int]:
 async def scan(conn: sqlite3.Connection, disk: Disk, root: str = "disk:/", *,
                job_id: int | None = None,
                make_dirs: bool = True,
-               resume: bool = True) -> dict:
+               resume: bool = True,
+               skip_empty: bool = True,
+               concurrency: int | None = None) -> dict:
     """Пройти облако и записать опись.
 
     make_dirs: сразу создаём локальное дерево папок -- структура должна
@@ -72,6 +74,12 @@ async def scan(conn: sqlite3.Connection, disk: Disk, root: str = "disk:/", *,
     Прерванным считается любое завершение без полного прохода: закрыли
     окно, убили процесс, сеть сдалась -- в finally очередь остаётся в
     базе, и следующий запуск встаёт на то же место.
+
+    skip_empty: не перечислять заново папки, которые в прошлый раз
+    оказались пустыми и с тех пор не менялись. Пустая папка стоит
+    ровно один запрос и не даёт ничего, а таких папок в коллекции
+    тысячи -- именно они съедали время описи. Выключается полной
+    перепроверкой (--full в CLI, галочка в интерфейсе).
     """
     paths = config.PATHS
     paths.ensure()
@@ -81,6 +89,37 @@ async def scan(conn: sqlite3.Connection, disk: Disk, root: str = "disk:/", *,
     base_dirs = 0
     total_bytes = 0
     seen_dirs: set[str] = set()
+    # Папки, которые в прошлый раз оказались пустыми: путь -> дата
+    # изменения на тот момент. Пока сервер отдаёт ту же дату, внутрь
+    # смотреть незачем. Список нужен всегда: по нему видно, какие
+    # пометки пора снять, а пропускать по нему -- только когда включено.
+    known_empty: dict[str, str] = db.known_empty_dirs(conn)
+    skipped_dirs = 0
+
+    def _skip_dir(item: dict) -> bool:
+        """Эту папку перечислять не нужно?"""
+        nonlocal skipped_dirs
+        if not skip_empty:
+            return False
+        path = item.get("path") or ""
+        was = known_empty.get(path)
+        if was is None:
+            return False
+        if was != (item.get("modified") or ""):
+            # Папку меняли -- смотрим внутрь.
+            return False
+        skipped_dirs += 1
+        return True
+
+    def _folder_done(path: str, empty: bool) -> None:
+        """Папку перечислили: запомнить, пустая ли она."""
+        if empty:
+            db.mark_empty(conn, path, True)
+        elif path in known_empty:
+            # Папка перестала быть пустой -- пометку снимаем, иначе
+            # следующая опись пропустит её и не увидит файл.
+            db.mark_empty(conn, path, False)
+
     # Точка отсчёта для сверки «что исчезло из облака». У ПРОДОЛЖЕННОЙ описи
     # она наследуется из чекпоинта: иначе всё, описанное до обрыва, не
     # попало бы в этот проход и было бы объявлено пропавшим.
@@ -106,9 +145,11 @@ async def scan(conn: sqlite3.Connection, disk: Disk, root: str = "disk:/", *,
             dirs = base_dirs
             log.info("опись продолжается с чекпоинта: в очереди %s папок, "
                      "ранее собрано файлов %s", len(stack), files)
-    # Последний снимок очереди от walk. В базу пишем не на каждой папке,
+    # Живая очередь папок от walk: в базу пишем не на каждой папке,
     # а с throttling: на дни идущей описи это сотни лишних записей.
-    pending: list[str] = list(stack)
+    # Структура меняется на месте -- копия на каждое событие при
+    # десятках тысяч папок стоила бы дороже самой описи.
+    pending: dict[str, None] = {p: None for p in stack}
     last_checkpoint = time.monotonic()
 
     def _save_checkpoint() -> None:
@@ -119,7 +160,7 @@ async def scan(conn: sqlite3.Connection, disk: Disk, root: str = "disk:/", *,
             "started": started})
         last_checkpoint = time.monotonic()
 
-    def _watch(queue: list[str]) -> None:
+    def _watch(queue: dict[str, None]) -> None:
         nonlocal pending
         pending = queue
         if time.monotonic() - last_checkpoint >= CHECKPOINT_SECONDS:
@@ -145,7 +186,10 @@ async def scan(conn: sqlite3.Connection, disk: Disk, root: str = "disk:/", *,
             async for item in disk.walk(
                     stack or [root],
                     should_stop=_stop,
-                    on_pending=_watch):
+                    on_pending=_watch,
+                    skip=_skip_dir,
+                    on_folder=_folder_done,
+                    concurrency=concurrency):
                 # catalog.jsonl -- журнал того, что сервер рассказывал о
                 # файлах, и писать в него стоит только НОВОЕ или
                 # ИЗМЕНИВШЕЕСЯ. Раньше каждая опись дописывала каталог
@@ -204,10 +248,17 @@ async def scan(conn: sqlite3.Connection, disk: Disk, root: str = "disk:/", *,
     files, dirs, total_bytes = _totals(conn, root)
     db.kv_set(conn, "last_scan", {"files": files, "dirs": dirs,
                                   "bytes": total_bytes, "at": db.now(),
-                                  "complete": completed, "vanished": vanished})
+                                  "complete": completed, "vanished": vanished,
+                                  "skipped_empty": skipped_dirs})
     out = {"files": files, "dirs": dirs, "bytes": total_bytes}
     if vanished:
         out["vanished"] = vanished
+    if skipped_dirs:
+        # Пропущенные папки -- это не «мы их не посмотрели», а «мы знаем,
+        # что они пустые, и сервер с тех пор их не менял». Сказать об
+        # этом честно: человек должен видеть, сколько опись не смотрела.
+        log.info("опись: пропущено известно пустых папок: %s", skipped_dirs)
+        out["skipped_empty"] = skipped_dirs
     return out
 
 
@@ -237,6 +288,10 @@ def reconcile(conn: sqlite3.Connection, root: str, started: int) -> int:
         "WHERE vanished_at IS NOT NULL AND last_seen >= ?", (started,)).rowcount or 0
     if gone or back:
         log.info("сверка с облаком: пропало %s, вернулось %s", gone, back)
+    # Пометка «пустая» ушедшей папки больше не нужна: папки нет, и
+    # пропускать её при следующей описи незачем.
+    conn.execute("DELETE FROM empty_dirs WHERE path IN "
+                 "(SELECT path FROM resources WHERE vanished_at IS NOT NULL)")
     return gone
 
 

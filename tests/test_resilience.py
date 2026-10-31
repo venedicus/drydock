@@ -28,6 +28,7 @@ import asyncio
 import os
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 ROOT = Path(tempfile.mkdtemp(prefix="cr-res-"))
@@ -161,7 +162,13 @@ def test_walk_stops_on_cancel_during_retry() -> None:
 
 
 def test_scan_checkpoint_and_resume() -> None:
-    """Прерванная опись продолжается с места, и хвост прерванной папки цел."""
+    """Прерванная опись продолжается с места, и хвост прерванной папки цел.
+
+    Обход теперь идёт пачками, и порядок папок не гарантирован, поэтому
+    проверяем не отдельные файлы, а смысл: прерванная опись оставила
+    очередь папок, а продолжение доводит её до конца -- в базе оказывается
+    всё, до последнего файла.
+    """
     listings = tree_listings()
     conn = db.connect(ROOT / "checkpoint.db")
     disk = fake_disk(listings)
@@ -170,7 +177,7 @@ def test_scan_checkpoint_and_resume() -> None:
     state = {"n": 0}
 
     def cancel_from_first_check(conn_arg, job_id: int) -> bool:
-        # «Стоп» нажимают на первой же проверке -- отмена посреди папки.
+        # «Стоп» нажимают на первой же проверке -- отмена посреди описи.
         state["n"] += 1
         return True
 
@@ -183,28 +190,160 @@ def test_scan_checkpoint_and_resume() -> None:
         scan_mod.CHECKPOINT_SECONDS = 10.0
 
     saved = db.kv_get(conn, scan_mod.CHECKPOINT_KEY)
-    assert saved and "disk:/C" in saved["stack"], saved
-    assert "disk:/C/43.txt" in _db_paths(conn), "начало прерванной папки потеряно"
-    assert "disk:/C/59.txt" not in _db_paths(conn), \
-        "отмена должна была прийтись на середину папки"
+    assert saved, "чекпоинт не сохранён"
+    assert saved["stack"], "в очереди не осталось папок -- их хвост потерян"
     assert first["files"] < 181, first
+    assert len(_db_paths(conn)) == first["files"], "в базе и в ответе разные числа"
 
     # Продолжение: то же облако, отмены больше нет.
     second = asyncio.run(scan_mod.scan(conn, disk, job_id=2))
 
     paths = _db_paths(conn)
     assert len(paths) == 181, f"ожидал 181 файл, получил {len(paths)}"
-    assert "disk:/C/59.txt" in paths, "хвост прерванной папки не добрали"
-    assert "disk:/A/59.txt" in paths and "disk:/B/00.txt" in paths
+    for name in ("A", "B", "C"):
+        assert f"disk:/{name}/59.txt" in paths, f"хвост папки {name} не добрали"
     assert db.kv_get(conn, scan_mod.CHECKPOINT_KEY) is None, \
         "завершённая опись обязана снять чекпоинт"
-    # Корень не перечислялся заново, прерванная папка -- один раз, остальные по разу.
-    calls = disk._calls
-    assert calls["disk:/"] == 1, calls
-    assert calls["disk:/C"] == 2, calls
-    assert calls["disk:/A"] == 1 and calls["disk:/B"] == 1, calls
+    # Корень перечислен один раз: продолжение идёт по оставшимся папкам.
+    assert disk._calls["disk:/"] == 1, disk._calls
     assert second["files"] == 181 and second["dirs"] == 4, second
     print("опись продолжается с чекпоинта, хвост прерванной папки цел: ок")
+
+
+def test_walk_lists_folders_at_once() -> None:
+    """Папки спрашиваются пачками, а не строго по одной.
+
+    Обход шёл по одной папке, и сеть в это время молчала: при тысячах
+    пустых папок опись упиралась в ожидание ответа. Теперь несколько
+    папок перечисляются одновременно.
+    """
+    disk = Disk("test-token-not-real")
+    live = {"now": 0, "max": 0}
+
+    async def listdir(path: str, *, offset: int = 0, limit: int = 500) -> dict:
+        live["now"] += 1
+        live["max"] = max(live["max"], live["now"])
+        try:
+            await asyncio.sleep(0.05)  # ответ сети не мгновенный
+            items: list[dict] = []
+            if path == "disk:/":
+                items = [{"path": f"disk:/E{i}", "name": f"E{i}", "type": "dir"}
+                         for i in range(20)]
+            return {"type": "dir", "name": path.rsplit("/", 1)[-1], "path": path,
+                    "_embedded": {"total": len(items), "items": items}}
+        finally:
+            live["now"] -= 1
+
+    disk.listdir = listdir  # type: ignore[method-assign]
+
+    started = time.monotonic()
+    paths = _paths(disk.walk("disk:/", concurrency=8))
+    took = time.monotonic() - started
+
+    # Корень, двадцать папок и двадцать их «я сама о себе» записей.
+    assert len(paths) == 41, len(paths)
+    assert live["max"] > 1, live  # папки спрашивались одновременно
+    # По одной это было бы двадцать одна пауза по 50 мс -- больше секунды.
+    assert took < 0.6, took
+    print("обход спрашивает папки пачками: ок")
+
+
+def test_scan_skips_known_empty_folders() -> None:
+    """Пустая папка, не менялась с прошлой описи, заново не перечисляется.
+
+    Именно эти папки съедали время: каждая стоит один запрос и не даёт
+    ничего, а их в коллекции тысячи. Менялась -- смотрим внутрь.
+    """
+    conn = db.connect(ROOT / "empty.db")
+    calls: dict[str, int] = {}
+    modified = {"disk:/Empty": "2026-10-01T00:00:00Z"}
+
+    async def listdir(path: str, *, offset: int = 0, limit: int = 500) -> dict:
+        calls[path] = calls.get(path, 0) + 1
+        items: list[dict] = []
+        if path == "disk:/":
+            items = [
+                {"path": "disk:/Empty", "name": "Empty", "type": "dir",
+                 "modified": modified["disk:/Empty"]},
+                {"path": "disk:/Full", "name": "Full", "type": "dir",
+                 "modified": "2026-10-01T00:00:00Z"},
+            ]
+        elif path == "disk:/Full":
+            items = [{"path": "disk:/Full/a.txt", "name": "a.txt",
+                      "type": "file", "size": 3}]
+        return {"type": "dir", "name": path.rsplit("/", 1)[-1], "path": path,
+                "modified": modified.get(path, "2026-10-01T00:00:00Z"),
+                "_embedded": {"total": len(items), "items": items}}
+
+    disk = Disk("test-token-not-real")
+    disk.listdir = listdir  # type: ignore[method-assign]
+
+    first = asyncio.run(scan_mod.scan(conn, disk))
+    assert first["files"] == 1, first
+    assert calls["disk:/Empty"] == 1, calls
+
+    # Вторая опись: пустая папка не менялась -- внутрь не смотрим.
+    calls.clear()
+    second = asyncio.run(scan_mod.scan(conn, disk))
+    assert "disk:/Empty" not in calls, calls
+    assert calls["disk:/Full"] == 1, calls
+    assert second.get("skipped_empty") == 1, second
+    assert second["files"] == 1, second
+
+    # Папку изменили -- снова смотрим внутрь.
+    modified["disk:/Empty"] = "2026-10-02T00:00:00Z"
+    calls.clear()
+    third = asyncio.run(scan_mod.scan(conn, disk))
+    assert calls["disk:/Empty"] == 1, calls
+    assert third["files"] == 1, third
+
+    # Полная опись (--full) игнорирует пометки и смотрит всё.
+    calls.clear()
+    fourth = asyncio.run(scan_mod.scan(conn, disk, skip_empty=False))
+    assert calls["disk:/Empty"] == 1, calls
+    assert fourth["files"] == 1, fourth
+    print("пустые папки не перечисляются, пока не меняются: ок")
+
+
+def test_scan_marks_folder_that_got_files_again() -> None:
+    """Папка перестала быть пустой -- пометку снимаем.
+
+    Иначе следующая опись пропустила бы папку и не увидела файл, который
+    в неё положили.
+    """
+    conn = db.connect(ROOT / "notempty.db")
+    state = {"files": []}
+    calls: dict[str, int] = {}
+
+    async def listdir(path: str, *, offset: int = 0, limit: int = 500) -> dict:
+        calls[path] = calls.get(path, 0) + 1
+        items: list[dict] = []
+        if path == "disk:/":
+            items = [{"path": "disk:/Box", "name": "Box", "type": "dir",
+                      "modified": "2026-10-01T00:00:00Z"}]
+        elif path == "disk:/Box":
+            items = list(state["files"])
+        return {"type": "dir", "name": path.rsplit("/", 1)[-1], "path": path,
+                "modified": "2026-10-01T00:00:00Z",
+                "_embedded": {"total": len(items), "items": items}}
+
+    disk = Disk("test-token-not-real")
+    disk.listdir = listdir  # type: ignore[method-assign]
+
+    asyncio.run(scan_mod.scan(conn, disk))
+    assert calls["disk:/Box"] == 1, calls
+    assert db.known_empty_dirs(conn) == {"disk:/Box": "2026-10-01T00:00:00Z"}, \
+        db.known_empty_dirs(conn)
+
+    # В папку положили файл, но дату изменения сервер не сдвинул --
+    # худший случай: полагаться приходится на сам факт находки.
+    state["files"] = [{"path": "disk:/Box/a.txt", "name": "a.txt",
+                       "type": "file", "size": 1}]
+    calls.clear()
+    asyncio.run(scan_mod.scan(conn, disk, skip_empty=False))
+    assert calls["disk:/Box"] == 1, calls
+    assert "disk:/Box" not in db.known_empty_dirs(conn), db.known_empty_dirs(conn)
+    print("папка с файлами больше не считается пустой: ок")
 
 
 def _db_paths(conn) -> set[str]:
@@ -581,7 +720,10 @@ def test_download_skips_present_and_records_verdicts() -> None:
 def main() -> int:
     test_walk_survives_network_flake()
     test_walk_stops_on_cancel_during_retry()
+    test_walk_lists_folders_at_once()
     test_scan_checkpoint_and_resume()
+    test_scan_skips_known_empty_folders()
+    test_scan_marks_folder_that_got_files_again()
     test_launcher_window_decision()
     test_launcher_takes_free_port_when_foreign_app_holds_it()
     test_preview_name_within_component_limit()

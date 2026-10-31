@@ -38,8 +38,11 @@ an order of magnitude: from 2 to 23 seconds per file.
 
 ## Deletion is irreversible for the program
 
-The file goes to the Yandex.Disk trash, but Drydock cannot undo it. That is
-why there are three strictness levels and a preview of what will go.
+Drydock has no undo operation for cloud deletion; by default it bypasses the
+Yandex.Disk trash to free quota. It deletes only verified files or files
+selected manually by the user. Deletion based on a single `unavailable`/504
+probe is disabled: availability changes, and that response does not prove the
+file is lost forever. A preview always shows what will be removed.
 
 ## One instance per database
 
