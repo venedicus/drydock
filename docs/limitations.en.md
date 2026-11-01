@@ -18,8 +18,8 @@ but there is nothing to download.
 Each system keeps the secret its own way: Windows uses DPAPI (the key is held
 by the system and bound to your account), macOS uses the Keychain, Linux uses
 libsecret. If a Linux box has no secret service, the fallback is a file with
-0600 permissions and no encryption — the interface says so plainly. The store
-cannot be moved to another machine; signing in again is cheaper anyway.
+0600 permissions and no encryption; the interface shows “no encryption”. The
+store cannot be moved to another machine.
 
 ## 7-Zip is required
 

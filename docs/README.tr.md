@@ -4,8 +4,8 @@ Bulut dosyaları vermeyi bıraktığında Yandex.Disk'ten kurtarır: koleksiyonu
 listeler, erişilebilirliği denetler, verileni indirir, heşleri doğrular,
 arşivlere paketler.
 
-Kendi koleksiyonum için yazıldı: ilk gün yarısını çıkardı, şimdi neredeyse
-%98'ini. Dosyalar bazen veriliyor bazen verilmiyor, o yüzden turu kapatmamak
+Kendi koleksiyonum için yazıldı: ilk gün yarısını çıkardı, kalanı haftalar
+boyunca toplandı. Dosyalar bazen veriliyor bazen verilmiyor, o yüzden turu kapatmamak
 mantıklı.
 
 [Русский](../README.md) · [English](README.en.md) · **Türkçe** ·

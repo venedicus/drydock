@@ -4,8 +4,8 @@ Bulut fayllarni bera olmay qolganda Yandex.Disk dan qutqaradi: toʻplamni
 roʻyxatga oladi, ishlashini tekshiradi, berilganini yuklaydi, xeshlarni
 solishtiradi, arxivlarga jamlaydi.
 
-Oʻz toʻplamim uchun yozilgan: birinchi kuni yarmini chiqardi, hozir deyarli
-98%. Fayllar goh beriladi, goh berilmaydi, shuning uchun turni oʻchirmagan
+Oʻz toʻplamim uchun yozilgan: birinchi kuni yarmini chiqardi, qolgani
+haftalab yigʻildi. Fayllar goh beriladi, goh berilmaydi, shuning uchun turni oʻchirmagan
 maʼqul.
 
 [Русский](../README.md) · [English](README.en.md) · [Türkçe](README.tr.md) ·

@@ -4,7 +4,8 @@ Bulud faylları verməyi dayandıranda Yandex.Disk-dən xilas edir: kolleksiyan�
 siyahıya alır, əlçatanlığı yoxlayır, veriləni endirir, heşləri tutuşdurur,
 arxivlərə yığır.
 
-Öz kolleksiyam üçün yazılıb: ilk gün yarısını çıxardı, indi təxminən 98%-ni.
+Öz kolleksiyam üçün yazılıb: ilk gün yarısını çıxardı, qalanı həftələrlə
+topladı.
 Fayllar gah verilir, gah verilmir, ona görə turu söndürməmək daha yaxşıdır.
 
 [Русский](../README.md) · [English](README.en.md) · [Türkçe](README.tr.md) ·
