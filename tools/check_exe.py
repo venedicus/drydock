@@ -1,14 +1,16 @@
-"""Проверить собранный exe: запустить сервером и дождаться ответа.
+"""Проверить собранный файл: запустить сервером и дождаться ответа.
 
-    .venv/Scripts/python tools/check_exe.py
+    .venv/Scripts/python tools/check_exe.py      # Windows
+    .venv/bin/python tools/check_exe.py          # macOS, Linux
 
-Окно не открываем: `Drydock.exe serve` поднимает только сервер, поэтому
+Окно не открываем: `Drydock serve` поднимает только сервер, поэтому
 проверка годится и для CI, где нет рабочего стола.
 """
 from __future__ import annotations
 
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -22,9 +24,43 @@ from pathlib import Path
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-EXE = Path(__file__).resolve().parent.parent / "dist" / "Drydock.exe"
+IS_WINDOWS = sys.platform == "win32"
+IS_MACOS = sys.platform == "darwin"
+DIST = Path(__file__).resolve().parent.parent / "dist"
+if IS_WINDOWS:
+    EXE = DIST / "Drydock.exe"
+elif IS_MACOS:
+    EXE = DIST / "Drydock.app" / "Contents" / "MacOS" / "Drydock"
+else:
+    EXE = DIST / "Drydock"
 PORT = 8799
 URL = f"http://127.0.0.1:{PORT}/api/state"
+
+
+def _stop(proc: subprocess.Popen) -> None:
+    """Снять сборку целиком, вместе с дочерним сервером.
+
+    PyInstaller onefile запускает настоящий сервер дочерним процессом:
+    terminate() снимает только распаковщик, а `serve` остаётся висеть на
+    порту и ломает следующий прогон. На Windows поэтому taskkill /T, на
+    POSIX -- сигнал всей группе процессов.
+    """
+    if proc.poll() is not None:
+        return
+    if IS_WINDOWS:
+        subprocess.run(
+            ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+            capture_output=True, check=False,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    else:
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+        except OSError:
+            proc.kill()
+    try:
+        proc.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        proc.kill()
 
 
 def main() -> int:
@@ -37,38 +73,26 @@ def main() -> int:
     proc = subprocess.Popen(  # свой же собранный файл
         [str(EXE), "serve", "--port", str(PORT)],
         env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        # Своя группа: тогда сигнал снимает и распаковщик, и сервер.
+        start_new_session=not IS_WINDOWS)
     try:
         for _ in range(60):
             if proc.poll() is not None:
                 out = (proc.stdout.read() or b"").decode("utf-8", "replace")
-                print("exe завершился раньше времени:\n" + out[-1500:])
+                print("сборка завершилась раньше времени:\n" + out[-1500:])
                 return 1
             try:
                 with urllib.request.urlopen(URL, timeout=2) as resp:
                     if resp.status == 200:
-                        print(f"exe отвечает: {URL} -> 200")
+                        print(f"сборка отвечает: {URL} -> 200")
                         return 0
             except (urllib.error.URLError, OSError):
                 time.sleep(1)
-        print("exe не ответил за 60 секунд")
+        print("сборка не ответила за 60 секунд")
         return 1
     finally:
-        # PyInstaller onefile запускает настоящий сервер дочерним процессом:
-        # terminate() снимает только распаковщик, а `serve` остаётся висеть
-        # на порту и ломает следующий прогон. Поэтому на Windows снимаем
-        # всё дерево целиком.
-        if os.name == "nt":
-            subprocess.run(  # noqa: PLW1510 - код возврата здесь не важен
-                ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
-                capture_output=True,
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-        else:
-            proc.kill()
-        try:
-            proc.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            pass
+        _stop(proc)
         shutil.rmtree(root, ignore_errors=True)
 
 

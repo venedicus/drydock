@@ -11,7 +11,7 @@
 [Қазақша](docs/README.kk.md) · [Oʻzbekcha](docs/README.uz.md) ·
 [Azərbaycanca](docs/README.az.md)
 
-MIT · Windows · Python 3.12+ · не связан с Яндексом
+MIT · Windows · macOS · Linux · Python 3.12+ · не связан с Яндексом
 
 [![site](https://img.shields.io/badge/site-venedicus.github.io%2Fdrydock-4fb477)](https://venedicus.github.io/drydock/)
 ![release](https://img.shields.io/github/v/release/venedicus/drydock?color=4fb477)
@@ -40,16 +40,28 @@ MIT · Windows · Python 3.12+ · не связан с Яндексом
 **Готовый файл** — `Drydock.exe` из [релизов](https://github.com/venedicus/drydock/releases/latest).
 Python не нужен, нужен только [7-Zip](https://www.7-zip.org/).
 
-**Из исходников** — Windows, Python 3.12+ и 7-Zip:
+**Из исходников** — Python 3.12+, 7-Zip и любая из трёх систем:
 
 ```powershell
+# Windows
 git clone https://github.com/venedicus/drydock.git
 cd drydock
 py -3.12 -m venv .venv
 .venv\Scripts\python.exe -m pip install -e .
 ```
 
-Запуск — `Drydock.exe` или `Drydock.bat`. Окно открывается на `http://127.0.0.1:8765`.
+```bash
+# macOS и Linux
+git clone https://github.com/venedicus/drydock.git
+cd drydock
+python3 -m venv .venv
+.venv/bin/python -m pip install -e .
+```
+
+На Linux 7-Zip ставится пакетом `p7zip-full`, на macOS — `brew install sevenzip`.
+
+Запуск — `Drydock.exe` на Windows, `./Drydock.sh` на macOS и Linux, либо
+`drydock app` из любого места. Окно открывается на `http://127.0.0.1:8765`.
 
 1. **Доступ** — вставить токен из [полигона Яндекса](https://yandex.ru/dev/disk/poligon/)
    или задать `YANDEX_DISK_TOKEN`.

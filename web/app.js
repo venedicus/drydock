@@ -2417,7 +2417,8 @@ async function authModal() {
       ${row(t("auth.scope"), esc(st.scope || "—"))}
       ${row(t("auth.store"), `<span class="mono">${esc(st.store)}</span>`)}
       ${row(t("auth.encryption"), st.encrypted
-        ? t("auth.dpapi") : `<b style="color:var(--bad)">${t("auth.no")}</b>`)}
+        ? esc(t("auth.crypto." + (st.backend || "dpapi")))
+        : `<b style="color:var(--bad)">${t("auth.crypto.file")}</b>`)}
       ${row(t("auth.redirectUri"), `<span class="mono">${esc(st.redirect_uri)}</span>`)}
     </dl>
 

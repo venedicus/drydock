@@ -139,10 +139,13 @@ def test_build(conn) -> None:
                              capture_output=True, text=True,
                              encoding="utf-8", errors="replace").stdout
 
-    # Структура внутри архива -- та же, что на диске.
-    for expect in ("files\\Library\\Sorted\\Наука\\physics.pdf",
-                   "files\\Library\\Sorted\\История\\rome.djvu",
-                   "meta\\previews\\Library\\Sorted\\Наука\\physics.pdf.jpg"):
+    # Структура внутри архива -- та же, что на диске. Разделитель у 7z
+    # свой на каждой системе (на Windows '\', на macOS и Linux '/'),
+    # поэтому сравниваем в одном виде.
+    listing = listing.replace("\\", "/")
+    for expect in ("files/Library/Sorted/Наука/physics.pdf",
+                   "files/Library/Sorted/История/rome.djvu",
+                   "meta/previews/Library/Sorted/Наука/physics.pdf.jpg"):
         assert expect in listing, f"нет в архиве: {expect}\n{listing[-1500:]}"
     assert "_manifest.json" in listing, "манифест не попал в архив"
     print("структура и превью внутри архива: ок")

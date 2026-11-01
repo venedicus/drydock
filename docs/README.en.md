@@ -11,7 +11,7 @@ Files come and go, so the loop is worth leaving on.
 [Қазақша](README.kk.md) · [Oʻzbekcha](README.uz.md) ·
 [Azərbaycanca](README.az.md)
 
-MIT · Windows · Python 3.12+ · not affiliated with Yandex
+MIT · Windows · macOS · Linux · Python 3.12+ · not affiliated with Yandex
 
 [![site](https://img.shields.io/badge/site-venedicus.github.io%2Fdrydock-4fb477)](https://venedicus.github.io/drydock/)
 ![release](https://img.shields.io/github/v/release/venedicus/drydock?color=4fb477)
@@ -40,16 +40,29 @@ autopilot, command palette `Ctrl+K`, six languages, dark and light themes.
 **Ready-made file** — `Drydock.exe` from [releases](https://github.com/venedicus/drydock/releases/latest).
 No Python needed, only [7-Zip](https://www.7-zip.org/).
 
-**From sources** — Windows, Python 3.12+ and 7-Zip:
+**From sources** — Python 3.12+, 7-Zip and any of the three systems:
 
 ```powershell
+# Windows
 git clone https://github.com/venedicus/drydock.git
 cd drydock
 py -3.12 -m venv .venv
 .venv\Scripts\python.exe -m pip install -e .
 ```
 
-Start with `Drydock.exe` or `Drydock.bat`. The window opens at `http://127.0.0.1:8765`.
+```bash
+# macOS and Linux
+git clone https://github.com/venedicus/drydock.git
+cd drydock
+python3 -m venv .venv
+.venv/bin/python -m pip install -e .
+```
+
+On Linux 7-Zip comes from the `p7zip-full` package, on macOS from
+`brew install sevenzip`.
+
+Start with `Drydock.exe` on Windows, `./Drydock.sh` on macOS and Linux, or
+`drydock app` from anywhere. The window opens at `http://127.0.0.1:8765`.
 
 1. **Access** — paste a token from the [Yandex polygon](https://yandex.ru/dev/disk/poligon/)
    or set `YANDEX_DISK_TOKEN`.

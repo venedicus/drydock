@@ -1,11 +1,11 @@
 {
   "$schema": "https://context7.com/schema/context7.json",
   "projectTitle": "drydock",
-  "description": "Desktop tool that rescues files from a Yandex.Disk that stopped serving them. Builds an inventory with hashes even for files that can no longer be downloaded, probes availability by fetching the first and last byte, downloads into .part and verifies md5/sha256 before renaming, re-checks unavailable files in rounds, packs into 7z volumes sized for Telegram, and deletes from the cloud only after a verified copy. Inventory lists folders concurrently and skips unchanged folders previously confirmed empty; full scan can be requested. Windows only: the OAuth token is kept in a DPAPI-protected file.",
+  "description": "Desktop tool that rescues files from a Yandex.Disk that stopped serving them. Builds an inventory with hashes even for files that can no longer be downloaded, probes availability by fetching the first and last byte, downloads into .part and verifies md5/sha256 before renaming, re-checks unavailable files in rounds, packs into 7z volumes sized for Telegram, and deletes from the cloud only after a verified copy. Inventory lists folders concurrently and skips unchanged folders previously confirmed empty; full scan can be requested. Runs on Windows, macOS and Linux: the OAuth token lives in DPAPI, the macOS Keychain or libsecret, and the mirror keeps the same file names on every system.",
   "folders": ["docs"],
   "excludeFolders": ["docs/images", ".github", "web/i18n", "tests"],
   "rules": [
-    "Windows only: the token lives in %LOCALAPPDATA%\\Drydock\\credentials.bin encrypted with DPAPI for the current user; it cannot be moved to another machine.",
+    "Cross-platform: the token lives in DPAPI on Windows, the Keychain on macOS and libsecret on Linux (0600 file without a secret service); app data lives in %LOCALAPPDATA%\\Drydock, ~/Library/Application Support/Drydock or $XDG_CONFIG_HOME/Drydock.",
     "Cloud deletion supports verified downloads, verified archives, and explicit manual selection. Deletion based only on an unavailable/504 probe is disabled because availability can recover.",
     "The loop rebuilds its queue on every pass: rescued files drop out, a file that just failed is set aside for LOOP_COOLDOWN_MIN minutes, a fresh 404 is re-checked once a day (GONE_RECHECK_S).",
     "A full disk stops the loop: when free space drops below RESERVE, the download returns no_space instead of spinning.",

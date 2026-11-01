@@ -268,7 +268,7 @@ def cmd_auth(args) -> int:
     if args.action == "status":
         st = secretstore.status()
         print(f"Хранилище:     {st['store']}")
-        print(f"Шифрование:    {'DPAPI (учётная запись Windows)' if st['encrypted'] else 'НЕТ'}")
+        print(f"Шифрование:    {secretstore.backend_label() if st['encrypted'] else 'НЕТ (файл без шифрования)'}")
         print(f"Приложение:    {'задано, ClientID …' + st['client_id_tail'] if st['has_app'] else 'не задано'}")
         print(f"Токен:         {'есть' if st['has_token'] else 'нет'}")
         print(f"Refresh-токен: {'есть' if st['has_refresh'] else 'нет'}")

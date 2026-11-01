@@ -1,20 +1,23 @@
 """Запуск как настольного приложения: двойной клик -- окно -- закрыл -- всё.
 
-Окно -- это Edge в режиме `--app`: без адресной строки, вкладок и кнопок,
-со своей записью на панели задач. Почему не Tauri, как в TagConveyor, и не
-pywebview: обе требуют отдельного тулчейна (Rust с npm или .NET с
-pythonnet), а здесь надо, чтобы работало сегодня и не ломалось от версии
-зависимости. WebView2 и так лежит в каждой Windows 11 -- берём его напрямую.
+Окно -- это Chromium-браузер в режиме `--app`: без адресной строки,
+вкладок и кнопок, со своей записью на панели задач. Почему не Tauri, как в
+TagConveyor, и не pywebview: обе требуют отдельного тулчейна (Rust с npm
+или .NET с pythonnet), а здесь надо, чтобы работало сегодня и не ломалось
+от версии зависимости. Chromium есть почти везде: Edge на Windows, Chrome,
+Chromium, Brave -- на macOS и Linux; если ни одного нет, открываем обычную
+вкладку системного браузера.
 
 Ключевая деталь: отдельный профиль браузера (`--user-data-dir`). Без него
-Edge отдаёт адрес уже запущенному процессу и наш Popen завершается сразу,
-то есть "дождаться закрытия окна" не работает. Со своим профилем процесс
-наш, и его закрытие честно означает "пользователь закрыл приложение".
+браузер отдаёт адрес уже запущенному процессу и наш Popen завершается
+сразу, то есть "дождаться закрытия окна" не работает. Со своим профилем
+процесс наш, и его закрытие честно означает "пользователь закрыл
+приложение".
 
 Повторный запуск не поднимает второй сервер: если порт уже отвечает, просто
 открываем ещё одно окно к тому, что работает.
 
-Тонкость, стоявшая приложения 16 октября: Edge с нашим профилем, получив
+Тонкость, стоявшая приложения 16 октября: браузер с нашим профилем, получив
 команду открыть URL, отдаёт адрес УЖЕ запущенному окну того же профиля и
 тут же выходит -- Popen.wait() возвращается за миллисекунды. Раньше лаунчер
 почитал это «пользователь закрыл приложение» и гасил свой же свежий сервер.
@@ -24,7 +27,6 @@ Edge отдаёт адрес уже запущенному процессу и �
 
 from __future__ import annotations
 
-import os
 import socket
 import subprocess
 import sys
@@ -35,20 +37,14 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-PROFILE = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "Drydock" / "window"
-LOG = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "Drydock" / "launch.log"
+from . import hostos
 
-BROWSERS = (
-    r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
-    r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
-    r"C:\Program Files\Google\Chrome\Application\chrome.exe",
-    r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
-    r"C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe",
-)
+ROOT = Path(__file__).resolve().parent.parent
+PROFILE = hostos.app_dir() / "window"
+LOG = hostos.app_dir() / "launch.log"
 
 # Окно, закрывшееся быстрее, чем через столько секунд после запуска, --
-# почти наверняка не человек: Edge ещё выбирает, в какое окно открывать.
+# почти наверняка не человек: браузер ещё выбирает, в какое окно открывать.
 WINDOW_GRACE = 5.0
 
 
@@ -107,22 +103,9 @@ def profile_browser_alive() -> bool:
 
     Признак -- командная строка процесса: --user-data-dir=<профиль> есть
     только у наших окон (и их дочерних процессов). Именно этим профилем
-    Edge и «отдаёт адрес» уже запущенному окну, выходя мгновенно.
+    браузер и «отдаёт адрес» уже запущенному окну, выходя мгновенно.
     """
-    marker = str(PROFILE).lower()
-    for exe in ("msedge.exe", "chrome.exe", "brave.exe"):
-        try:
-            out = subprocess.run(  # noqa: PLW1510 - разбираем вывод сами
-                ["powershell", "-NoProfile", "-NonInteractive", "-Command",
-                 (f"Get-CimInstance Win32_Process -Filter \"Name='{exe}'\" "
-                  "| Select-Object -ExpandProperty CommandLine")],
-                capture_output=True, text=True, timeout=20,
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-        except (OSError, subprocess.SubprocessError):
-            return False
-        if marker in (out.stdout or "").lower():
-            return True
-    return False
+    return hostos.browser_processes(str(PROFILE))
 
 
 def decide_after_window_closed(elapsed: float, *, window_alive: bool,
@@ -142,9 +125,9 @@ def decide_after_window_closed(elapsed: float, *, window_alive: bool,
 
 
 def find_browser() -> Path | None:
-    for path in BROWSERS:
-        if Path(path).is_file():
-            return Path(path)
+    for raw in hostos.browser_candidates():
+        if Path(raw).is_file():
+            return Path(raw)
     return None
 
 
@@ -153,7 +136,7 @@ def open_window(port: int, *, separate_profile: bool = True) -> subprocess.Popen
     exe = find_browser()
     if exe is None:
         import webbrowser
-        log("браузер на основе Chromium не найден -- открываю обычной вкладкой")
+        log("Chromium-браузер не найден -- открываю обычной вкладкой")
         webbrowser.open(url)
         return None
     args = [str(exe), f"--app={url}", "--window-size=1460,920",
@@ -162,7 +145,8 @@ def open_window(port: int, *, separate_profile: bool = True) -> subprocess.Popen
         PROFILE.mkdir(parents=True, exist_ok=True)
         args.append(f"--user-data-dir={PROFILE}")
     log(f"окно: {exe.name}")
-    return subprocess.Popen(args, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    return subprocess.Popen(args, creationflags=hostos.no_window(),
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def _serve(port: int):

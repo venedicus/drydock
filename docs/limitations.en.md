@@ -13,10 +13,26 @@ If the server answers `404`, the file is gone. Its inventory record remains —
 name, size, hash, place in the tree — so you can look for a copy elsewhere,
 but there is nothing to download.
 
-## Windows only
+## The token is bound to the machine
 
-The keystore is Windows DPAPI: the token is encrypted for the current user and
-does not move to another machine. The program does not run on Linux or macOS.
+Each system keeps the secret its own way: Windows uses DPAPI (the key is held
+by the system and bound to your account), macOS uses the Keychain, Linux uses
+libsecret. If a Linux box has no secret service, the fallback is a file with
+0600 permissions and no encryption — the interface says so plainly. The store
+cannot be moved to another machine; signing in again is cheaper anyway.
+
+## 7-Zip is required
+
+Archiving is done by an external 7-Zip: the installer from 7-zip.org on
+Windows, the `p7zip-full` package on Linux, `brew install sevenzip` on macOS.
+The program does not bundle it; without it inventory, probe and download work
+as usual — only the archive step is unavailable.
+
+## Shortcuts differ
+
+`tools/make_shortcut.py` creates a `.lnk` on Windows, a menu entry on Linux
+and a `.command` in `~/Applications` on macOS. No administrator rights
+anywhere.
 
 ## It is not a backup
 

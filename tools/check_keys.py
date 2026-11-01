@@ -28,7 +28,7 @@ PLURAL = re.compile(r"\.(one|few|many|other)$")
 # Семейства, которые собираются в коде по частям: их проверяем по списку
 # значений из сервера, а не по литералам.
 DYNAMIC = ("job.", "job.state.", "jobmsg.", "err.", "theme.", "reason.",
-           "n.", "next.", "unit.")
+           "n.", "next.", "unit.", "auth.crypto.")
 
 
 def strip_comments(text: str) -> str:

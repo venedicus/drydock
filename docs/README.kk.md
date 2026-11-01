@@ -11,7 +11,7 @@
 [Русский](../README.md) · [English](README.en.md) · [Türkçe](README.tr.md) ·
 **Қазақша** · [Oʻzbekcha](README.uz.md) · [Azərbaycanca](README.az.md)
 
-MIT · Windows · Python 3.12+ · Yandex-пен байланысы жоқ
+MIT · Windows · macOS · Linux · Python 3.12+ · Yandex-пен байланысы жоқ
 
 [![site](https://img.shields.io/badge/site-venedicus.github.io%2Fdrydock-4fb477)](https://venedicus.github.io/drydock/)
 ![release](https://img.shields.io/github/v/release/venedicus/drydock?color=4fb477)
@@ -36,7 +36,7 @@ MIT · Windows · Python 3.12+ · Yandex-пен байланысы жоқ
 
 ## Жылдам бастау
 
-Windows, Python 3.12+ және [7-Zip](https://www.7-zip.org/) керек.
+Python 3.12+, [7-Zip](https://www.7-zip.org/) және Windows, macOS немесе Linux керек.
 
 **Дайын файл** — [релиздерден](https://github.com/venedicus/drydock/releases/latest) `Drydock.exe`. Python қажет емес, тек [7-Zip](https://www.7-zip.org/).
 
