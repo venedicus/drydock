@@ -19,7 +19,6 @@ import logging
 import os
 import shutil
 import sqlite3
-import subprocess
 import threading
 import time
 from contextlib import asynccontextmanager
@@ -33,7 +32,19 @@ from pydantic import BaseModel
 from starlette.requests import Request
 
 from . import archive as archive_mod
-from . import cloud, config, db, download, logging_setup, oauth, probe, scan, secretstore, tree
+from . import (
+    cloud,
+    config,
+    db,
+    download,
+    hostos,
+    logging_setup,
+    oauth,
+    probe,
+    scan,
+    secretstore,
+    tree,
+)
 from . import health as health_mod
 from .localpath import extended, local_for
 from .msg import job_msg
@@ -1425,17 +1436,17 @@ def reveal_target(cloud_path: str | None) -> Path:
 
 @app.post("/api/reveal")
 def reveal(body: RevealBody) -> dict:
-    """Открыть папку спасения в проводнике.
+    """Открыть папку спасения в файловом менеджере.
 
     Вопрос «а куда оно вообще качается» возникает ровно потому, что ответ
     нигде не показан. Путь теперь виден в шапке и открывается одним щелчком.
+
+    Чем открывать -- проводником, Finder или xdg-open -- решает hostos:
+    в остальном коде про различия систем знать не нужно.
     """
     target = reveal_target(body.path)
     try:
-        if target.is_dir():
-            subprocess.Popen(["explorer", str(target)])
-        else:
-            subprocess.Popen(["explorer", "/select,", str(target)])
+        hostos.reveal(target)
     except OSError as exc:
         raise HTTPException(500, {"code": "err.reveal",
                                   "error": str(exc)}) from exc

@@ -11,7 +11,7 @@ maʼqul.
 [Русский](../README.md) · [English](README.en.md) · [Türkçe](README.tr.md) ·
 [Қазақша](README.kk.md) · **Oʻzbekcha** · [Azərbaycanca](README.az.md)
 
-MIT · Windows · Python 3.12+ · Yandex bilan bogʻliq emas
+MIT · Windows · macOS · Linux · Python 3.12+ · Yandex bilan bogʻliq emas
 
 [![site](https://img.shields.io/badge/site-venedicus.github.io%2Fdrydock-4fb477)](https://venedicus.github.io/drydock/)
 ![release](https://img.shields.io/github/v/release/venedicus/drydock?color=4fb477)
@@ -36,7 +36,7 @@ bilan solishtirish, avtopilot, `Ctrl+K` palitrasi, olti til, qorongʻi va yorug�
 
 ## Tez boshlash
 
-Windows, Python 3.12+ va [7-Zip](https://www.7-zip.org/) kerak.
+Python 3.12+, [7-Zip](https://www.7-zip.org/) va Windows, macOS yoki Linux kerak.
 
 **Tayyor fayl** — [relizlardan](https://github.com/venedicus/drydock/releases/latest) `Drydock.exe`. Python kerak emas, faqat [7-Zip](https://www.7-zip.org/).
 

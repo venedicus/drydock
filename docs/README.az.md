@@ -10,7 +10,7 @@ Fayllar gah verilir, gah verilmir, ona görə turu söndürməmək daha yaxşıd
 [Русский](../README.md) · [English](README.en.md) · [Türkçe](README.tr.md) ·
 [Қазақша](README.kk.md) · [Oʻzbekcha](README.uz.md) · **Azərbaycanca**
 
-MIT · Windows · Python 3.12+ · Yandex ilə əlaqəli deyil
+MIT · Windows · macOS · Linux · Python 3.12+ · Yandex ilə əlaqəli deyil
 
 [![site](https://img.shields.io/badge/site-venedicus.github.io%2Fdrydock-4fb477)](https://venedicus.github.io/drydock/)
 ![release](https://img.shields.io/github/v/release/venedicus/drydock?color=4fb477)
@@ -35,7 +35,7 @@ disklə tutuşdurulması, avtopilot, `Ctrl+K` palitrası, altı dil, tünd və i
 
 ## Sürətli başlanğıc
 
-Windows, Python 3.12+ və [7-Zip](https://www.7-zip.org/) lazımdır.
+Python 3.12+, [7-Zip](https://www.7-zip.org/) və Windows, macOS ya Linux lazımdır.
 
 **Hazır fayl** — [relizlərdən](https://github.com/venedicus/drydock/releases/latest) `Drydock.exe`. Python lazım deyil, yalnızca [7-Zip](https://www.7-zip.org/).
 

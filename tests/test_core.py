@@ -14,7 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from drydock import db, download, tree
+from drydock import db, download, hostos, tree
 from drydock.archive import plan_batch
 from drydock.cloud import eligible
 from drydock.download import plan
@@ -51,15 +51,26 @@ def test_paths():
     assert safe_component("имя. ") == "имя"
     assert safe_component("COM1") == "_COM1"
     long = Path("C:/") / ("x" * 150) / ("y" * 150)
-    assert extended(long).startswith("\\\\?\\")
-    # Компонент длиннее 255 Windows не принимает даже с префиксом \\?\:
-    # имя книги из облака («...Том 3. 1892.pdf», 255 символов) плюс
+    if hostos.IS_WINDOWS:
+        assert extended(long).startswith("\\\\?\\")
+    else:
+        # На macOS и Linux префикса нет: там длина пути не ограничена, а
+        # «\\?\» стал бы обычной частью имени файла и сломал бы открытие.
+        assert not extended(long).startswith("\\\\?\\")
+        assert extended(long) == str(long.resolve())
+    # Компонент длиннее лимита не принимает ни одна файловая система:
+    # в Windows это 255 символов, на macOS и Linux -- 255 байт UTF-8.
+    # Имя книги из облака («...Том 3. 1892.pdf», 255 символов) плюс
     # «.jpg» давало Errno 22 и 17 октября убило порцию превью после
     # часа описи. Обрезка детерминированная, с двух концов: начало
     # несут длинные названия, хвост -- том, год и формат.
+    def fits(text: str) -> bool:
+        size = len(text) if hostos.IS_WINDOWS else len(text.encode("utf-8"))
+        return size <= 255
+
     long_name = "я" * 250 + " Книга.pdf"
     short = safe_component(long_name)
-    assert len(short) <= 255, len(short)
+    assert fits(short), short
     assert short.endswith(".pdf"), short
     assert short == safe_component(long_name), "обрезка должна быть детерминированной"
     assert safe_component("я" * 250 + " Другая.pdf") != short, \
@@ -68,12 +79,16 @@ def test_paths():
     real = ("Русская историческая библиография. Указатель книг и статей "
             "по русской и всеобщей истории и вспомогательным наукам "
             "за 1800-1854 включительно. Том 3. 1892.pdf")
-    # Влезает в лимит -- имя существует на NTFS как есть, резать нечего.
-    assert len(real) <= 255 and safe_component(real) == real
+    # Влезает в лимит -- имя существует на диске как есть, резать нечего.
+    # На POSIX тот же текст -- уже 330 байт, и это законно короткое имя.
+    if fits(real):
+        assert safe_component(real) == real
+    else:
+        assert fits(safe_component(real)), safe_component(real)
     # А с хвостом «.jpg» к превью -- уже нет: режем, оба конца целы.
     padded = real.replace("Том 3", "Том " + "3" * 40)
     cut = safe_component(padded)
-    assert len(cut) <= 255, len(cut)
+    assert fits(cut), cut
     assert cut.startswith("Русская историческая"), cut[:40]
     assert "1892.pdf" in cut, cut[-40:]
     print("пути: ок")

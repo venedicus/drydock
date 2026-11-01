@@ -117,6 +117,11 @@ def main() -> int:
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(blob)
         print(f"{dest}  ({len(blob)} байт)")
+    # PNG нужен там, где .ico не понимают: ярлык в меню Linux, иконка окна
+    # на macOS. Рисовать его отдельно незачем -- он уже есть внутри ico.
+    png_path = ROOT / "assets" / "drydock.png"
+    png_path.write_bytes(png(256, draw(256)))
+    print(f"{png_path}  ({png_path.stat().st_size} байт)")
     return 0
 
 

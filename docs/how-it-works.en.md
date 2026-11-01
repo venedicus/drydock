@@ -121,3 +121,11 @@ catalog.db  inventory, probes, history, archives, jobs
 
 `catalog.db` is plain SQLite: `resources`, `probe`, `probe_history`, `local`,
 `cloud_deleted`, `archives`, `archive_volumes`, `jobs`.
+
+The rescue folder can move between Windows, macOS and Linux: file names in
+the mirror are the same on every system. Characters Windows forbids (`:`,
+`?`, `*` …) are replaced with look-alikes from Unicode even where they are
+legal, otherwise the same book would be named differently and the database
+would stop matching the disk. The name limit differs too: Windows counts 255
+characters, macOS and Linux count 255 UTF-8 bytes, so long Russian titles are
+cut shorter on POSIX.

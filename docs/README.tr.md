@@ -12,7 +12,7 @@ mantıklı.
 [Қазақша](README.kk.md) · [Oʻzbekcha](README.uz.md) ·
 [Azərbaycanca](README.az.md)
 
-MIT · Windows · Python 3.12+ · Yandex ile bağlantılı değildir
+MIT · Windows · macOS · Linux · Python 3.12+ · Yandex ile bağlantılı değildir
 
 [![site](https://img.shields.io/badge/site-venedicus.github.io%2Fdrydock-4fb477)](https://venedicus.github.io/drydock/)
 ![release](https://img.shields.io/github/v/release/venedicus/drydock?color=4fb477)
@@ -37,7 +37,7 @@ diskle eşitlenmesi, otopilot, komut paleti `Ctrl+K`, altı dil, koyu ve açık 
 
 ## Hızlı başlangıç
 
-Windows, Python 3.12+ ve [7-Zip](https://www.7-zip.org/) gerekir.
+Python 3.12+, [7-Zip](https://www.7-zip.org/) ve Windows, macOS ya da Linux gerekir.
 
 **Hazır dosya** — [sürümlerden](https://github.com/venedicus/drydock/releases/latest) `Drydock.exe`. Python gerekmez, yalnızca [7-Zip](https://www.7-zip.org/).
 

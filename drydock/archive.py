@@ -36,7 +36,7 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
-from . import config, db
+from . import config, db, hostos
 
 log = logging.getLogger("drydock.archive")
 from .localpath import extended
@@ -44,10 +44,22 @@ from .scan import preview_dest
 
 
 def seven_zip() -> Path | None:
-    for cand in (shutil.which("7z"), shutil.which("7za"),
-                 r"C:\Program Files\7-Zip\7z.exe",
-                 r"C:\Program Files (x86)\7-Zip\7z.exe"):
-        if cand and Path(cand).is_file():
+    """Где лежит 7-Zip. Ищем в PATH, потом в обычных местах установки.
+
+    На Linux и macOS это обычно `7z`/`7zz` из p7zip или 7-Zip 21+, на
+    Windows -- 7z.exe из установщика. Имя `7zz` появилось в 7-Zip 21:
+    старый `7z` на новых системах уже не ставится.
+    """
+    for name in ("7z", "7zz", "7za", "7zr"):
+        found = shutil.which(name)
+        if found and Path(found).is_file():
+            return Path(found)
+    for cand in (r"C:\Program Files\7-Zip\7z.exe",
+                 r"C:\Program Files (x86)\7-Zip\7z.exe",
+                 "/opt/homebrew/bin/7zz", "/opt/homebrew/bin/7z",
+                 "/usr/local/bin/7zz", "/usr/local/bin/7z",
+                 "/usr/bin/7z", "/usr/bin/7zz", "/usr/lib/p7zip/7z"):
+        if Path(cand).is_file():
             return Path(cand)
     return None
 
@@ -103,7 +115,7 @@ def _run(cmd: list[str], cwd: Path,
     proc = subprocess.Popen(
         cmd, cwd=str(cwd), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         text=True, encoding="utf-8", errors="replace",
-        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        creationflags=hostos.no_window())
     chunks: list[str] = []
     while True:
         try:
@@ -148,7 +160,8 @@ def build(conn: sqlite3.Connection, paths: list[str] | None = None, *,
     """
     exe = seven_zip()
     if exe is None and runner is _run:
-        raise ValueError("не найден 7-Zip (7z.exe) -- установите 7-Zip")
+        raise ValueError("не найден 7-Zip (7z) -- установите 7-Zip, "
+                         "на Linux это пакет p7zip-full, на macOS -- sevenzip")
     root = config.PATHS.root
     out_dir = config.PATHS.archives
     out_dir.mkdir(parents=True, exist_ok=True)

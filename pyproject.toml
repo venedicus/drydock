@@ -1,6 +1,6 @@
 [project]
 name = "drydock"
-version = "0.6.0"
+version = "0.7.0"
 description = "Rescue files from a failing Yandex.Disk: inventory, availability probe, selective download, 7z archiving"
 readme = "README.md"
 license = { text = "MIT" }
@@ -8,9 +8,13 @@ requires-python = ">=3.12"
 keywords = ["yandex-disk", "recovery", "backup", "salvage", "archive", "7z"]
 classifiers = [
     "Development Status :: 4 - Beta",
+    "Environment :: MacOS X",
     "Environment :: Win32 (MS Windows)",
+    "Environment :: X11 Applications",
     "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS",
     "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3.12",
     "Topic :: System :: Archiving :: Backup",
 ]

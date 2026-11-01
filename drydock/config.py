@@ -11,6 +11,8 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import hostos
+
 # Корень спасённого по умолчанию. Внутри:
 #   files/     -- зеркало облака, структура ОДИН В ОДИН
 #   meta/      -- превью и опись (то, что спасаем даже для битых файлов)
@@ -40,9 +42,11 @@ def settings_file() -> Path:
         return Path(os.environ["DRYDOCK_SETTINGS"])
     if os.environ.get("DRYDOCK_ROOT"):
         return Path(os.environ["DRYDOCK_ROOT"]) / "settings.json"
-    _base = Path(os.environ.get("LOCALAPPDATA") or Path.home())
-    return _base / "Drydock" / "settings.json"
-_LEGACY_SETTINGS = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "CloudRecovery" / "settings.json"
+    return hostos.app_dir() / "settings.json"
+
+
+# Прежнее имя проекта: настройки, выбранные до переименования, не теряем.
+_LEGACY_SETTINGS = hostos.legacy_app_dir() / "settings.json"
 SETTINGS_FILE = settings_file()
 
 
