@@ -81,14 +81,23 @@ def test_no_orphan_left() -> None:
     threading.Timer(0.8, lambda: stop.__setitem__("now", True)).start()
     archive._run(SLEEPER, ROOT, lambda: stop["now"])
 
-    # Ни одного живого python с нашей меткой остаться не должно.
-    probe = subprocess.run(  # noqa: PLW1510 - код возврата не важен
-        ["powershell", "-NoProfile", "-NonInteractive", "-Command",
-         ("Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" "
-          "| Where-Object { $_.CommandLine -like '*time.sleep(120)*' } "
-          "| Measure-Object | Select-Object -ExpandProperty Count")],
-        capture_output=True, text=True, encoding="utf-8", errors="replace")
-    left = (probe.stdout or "0").strip() or "0"
+    # Ни одного живого python с нашей меткой остаться не должно. Чем
+    # смотреть список процессов, зависит от системы: WMI в Windows, ps
+    # на macOS и Linux.
+    marker = "time.sleep(120)"
+    if os.name == "nt":
+        probe = subprocess.run(  # noqa: PLW1510 - код возврата не важен
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command",
+             ("Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" "
+              "| Where-Object { $_.CommandLine -like '*time.sleep(120)*' } "
+              "| Measure-Object | Select-Object -ExpandProperty Count")],
+            capture_output=True, text=True, encoding="utf-8", errors="replace")
+        left = (probe.stdout or "0").strip() or "0"
+    else:
+        probe = subprocess.run(["ps", "-axo", "command"], check=False,
+                               capture_output=True, text=True)
+        left = str(sum(1 for line in (probe.stdout or "").splitlines()
+                       if marker in line))
     assert left.isdigit() and int(left) == 0, f"осталось процессов: {left}"
     print("сирот не осталось")
 

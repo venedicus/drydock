@@ -90,7 +90,11 @@ def test_paths():
     cut = safe_component(padded)
     assert fits(cut), cut
     assert cut.startswith("Русская историческая"), cut[:40]
-    assert "1892.pdf" in cut, cut[-40:]
+    # Хвост сохраняет год и формат. Хеш-различитель встаёт перед
+    # расширением, поэтому проверяем их по отдельности: «1892.pdf» после
+    # обрезки уже не одно слово.
+    assert "1892" in cut, cut[-40:]
+    assert cut.endswith(".pdf"), cut[-40:]
     print("пути: ок")
 
 
