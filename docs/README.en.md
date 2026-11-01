@@ -4,7 +4,8 @@ Rescues files from Yandex.Disk when the cloud stops serving them: inventories
 the collection, probes availability, downloads what is still served, verifies
 hashes, packs into archives.
 
-Built for a real collection: half of it on the first day, almost 98% now.
+Built for a real collection: half of it on the first day, the rest took
+weeks.
 Files come and go, so the loop is worth leaving on.
 
 [Русский](../README.md) · **English** · [Türkçe](README.tr.md) ·
@@ -75,6 +76,7 @@ Start with `Drydock.exe` on Windows, `./Drydock.sh` on macOS and Linux, or
 - [How it works](how-it-works.en.md) — inventory, probe, download, verification, archive, delete
 - [Limitations](limitations.en.md) — what it does not do, and why
 - [Comparison](comparison.en.md) — Drydock, a sync client and rclone
+- [Audit, 24 October](archive/audit-2026-10-24.md) — a code review and measurements as of that date
 - [Contributing](../CONTRIBUTING.md) · [Security](../SECURITY.md) · [Changelog](../CHANGELOG.md)
 
 ## How to help
