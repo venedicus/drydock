@@ -190,6 +190,26 @@ def test_next_step_kinds_covered(dicts) -> None:
     print(f"карточка «Что дальше»: все {len(kinds)} видов шага переведены")
 
 
+def test_no_duration_promises(dicts) -> None:
+    """Тексты не обещают, сколько времени займёт прогон.
+
+    Темп зависит от хранилища и меняется в разы, поэтому любое число здесь
+    быстро расходится с тем, что видит человек.
+    """
+    banned = ("займёт около", "идти часами", "takes about", "can take hours")
+    bad: list[str] = []
+    for lang, dictionary in dicts.items():
+        for key, text in dictionary.items():
+            low = text.lower()
+            for phrase in banned:
+                if phrase in low:
+                    bad.append(f"{lang}:{key}")
+            if "{hours}" in text and key.startswith(("next.", "arch.")):
+                bad.append(f"{lang}:{key}")
+    assert not bad, f"текст обещает длительность: {bad}"
+    print("прогнозов длительности в текстах нет")
+
+
 def main() -> int:
     if not I18N.is_dir():
         print("нет web/i18n -- сначала tools/make_i18n.py", file=sys.stderr)
@@ -198,6 +218,7 @@ def main() -> int:
     test_same_keys(dicts)
     test_no_empty(dicts)
     test_placeholders(dicts)
+    test_no_duration_promises(dicts)
     test_russian_plurals(dicts)
     test_keys_used_exist(dicts)
     test_job_states_covered(dicts)

@@ -46,12 +46,6 @@ probe sees such a file as unavailable; the download keeps `.part` and resumes
 on the next attempt. If the file is never served whole, it cannot be rescued —
 only its inventory record remains.
 
-## Time estimates are rough
-
-Loop duration is computed from recent download passes. Before any pass exists,
-a fallback of 20 seconds per file is used. On real storage the rate varies by
-an order of magnitude: from 2 to 23 seconds per file.
-
 ## Deletion is irreversible for the program
 
 Drydock has no undo operation for cloud deletion; by default it bypasses the

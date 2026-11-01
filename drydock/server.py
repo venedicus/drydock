@@ -648,31 +648,6 @@ def cached_remaining(force: bool = False) -> dict:
     return value
 
 
-def _seconds_per_file(c) -> float:
-    """Сколько в среднем уходит на файл -- по последним проходам выгрузки.
-
-    Раньше здесь стояло 20 секунд на файл. Замеры давали и 2, и 23.5:
-    хранилище меняется, и оценка «прогон займёт N часов» врала тем сильнее,
-    чем дальше оно уходит от константы. Считаем по факту, константа --
-    только запасной вариант, когда проходов ещё не было.
-    """
-    row = c.execute(
-        """SELECT SUM(done) AS files,
-                  SUM(finished_at - started_at) AS spent
-             FROM jobs
-            WHERE kind='download' AND finished_at IS NOT NULL
-              AND done > 0 AND started_at > ?""",
-        (db.now() - 14 * 86400,)).fetchone()
-    try:
-        files = int(row["files"] or 0)
-        spent = float(row["spent"] or 0)
-    except (TypeError, ValueError):
-        return 20.0
-    if files < 20 or spent <= 0:
-        return 20.0
-    return max(0.5, spent / files)
-
-
 def next_step(c, totals: dict, running: int | None = None,
               left: dict | None = None) -> dict:
     """Какой шаг программа советует следуюшим -- и почему.
@@ -708,9 +683,10 @@ def next_step(c, totals: dict, running: int | None = None,
     unavail = int(left.get("loop_queue")
                   or (by.get("unavailable") or {}).get("files") or 0)
     if unavail:
+        # Длительность прогона не показываем: средняя по прошлым задачам
+        # расходится с текущим темпом.
         return {"kind": "loop", "n": unavail,
-                "bytes": (by.get("unavailable") or {}).get("bytes") or 0,
-                "hours": round(unavail * _seconds_per_file(c) / 3600, 1)}
+                "bytes": (by.get("unavailable") or {}).get("bytes") or 0}
     if totals.get("unchecked"):
         return {"kind": "probe", "n": totals["unchecked"]}
     if totals.get("stale"):

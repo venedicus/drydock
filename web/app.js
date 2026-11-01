@@ -1090,8 +1090,7 @@ function renderNext(s) {
      <div class="lead">${t(`next.${step.kind}.lead`, { n: step.n || 0,
          files: t("n.files", { n: step.n || 0 }) })}</div>
      <div class="why">${t(`next.${step.kind}.why`, { n: step.n || 0,
-         files: t("n.files", { n: step.n || 0 }),
-         hours: step.hours || 0 })}</div>
+         files: t("n.files", { n: step.n || 0 }) })}</div>
      ${hasBtn ? `<button class="primary" id="next-go"
         style="width:100%">${t(`next.${step.kind}.btn`)}</button>` : ""}`;
   const go = $("next-go");
