@@ -2,8 +2,8 @@
 
 > Rescues files from a failing Yandex.Disk: inventories the collection,
 > probes availability without downloading, downloads what is still served,
-> verifies hashes, packs into 7z volumes, deletes from the cloud by
-> strictness level. Windows, Python 3.12+.
+> verifies hashes, packs into 7z volumes, deletes from the cloud only what is
+> verified or explicitly selected. Windows, Python 3.12+.
 
 ## Docs
 
