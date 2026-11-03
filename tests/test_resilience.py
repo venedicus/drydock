@@ -351,6 +351,42 @@ def _db_paths(conn) -> set[str]:
             conn.execute("SELECT path FROM resources WHERE type='file'")}
 
 
+def test_wait_ready_trusts_uvicorn_not_http() -> None:
+    """Готовность сервера -- флаг uvicorn, а не ответ по HTTP.
+
+    3 ноября запуск дважды падал с «сервер не поднялся»: сервер поднимался
+    (в логе «сервер готов»), но первый /api/state на холодном диске не
+    укладывался в двухсекундный таймаут -- база 274 МБ плюс обход зеркала
+    на 22 тыс. файлов занимают диск. Живой сервер выглядел мёртвым.
+    """
+    class Srv:
+        started = True
+
+    class Alive:
+        @staticmethod
+        def is_alive() -> bool:
+            return True
+
+    started_at = time.time()
+    assert desktop.wait_ready(1, srv=Srv(), thread=Alive(), timeout=10) is True
+    assert time.time() - started_at < 1, "флаг уже стоит -- ждать нечего"
+
+    class Dead:
+        @staticmethod
+        def is_alive() -> bool:
+            return False
+
+    class NotStarted:
+        started = False
+
+    # Поток умер, флага нет -- не ждём все девяносто секунд.
+    started_at = time.time()
+    assert desktop.wait_ready(1, srv=NotStarted(), thread=Dead(),
+                              timeout=30) is False
+    assert time.time() - started_at < 1
+    print("готовность берётся у uvicorn, а не по таймауту HTTP: ок")
+
+
 def test_launcher_window_decision() -> None:
     """Мгновенно закрывшееся окно -- не всегда «пользователь закрыл»."""
     # Edge отдал адрес уже запущенному окну нашего профиля: сервер живой,
@@ -404,7 +440,7 @@ def test_launcher_takes_free_port_when_foreign_app_holds_it() -> None:
         started.append(p)
         return FakeServer(), FakeThread()
 
-    def fake_ready(p: int, timeout: float = 30) -> bool:
+    def fake_ready(p: int, *, srv=None, thread=None, timeout: float = 90) -> bool:
         return True
 
     def fake_window(p: int, **kw) -> FakeWindow:

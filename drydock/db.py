@@ -157,6 +157,9 @@ CREATE INDEX IF NOT EXISTS ix_jobs_start ON jobs(started_at);
 """
 
 
+_SCHEMA_READY: set[str] = set()
+
+
 def connect(path: Path) -> sqlite3.Connection:
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(Path(path), isolation_level=None, timeout=30,
@@ -175,8 +178,14 @@ def connect(path: Path) -> sqlite3.Connection:
     # и кириллицу, и турецкую i.
     conn.create_function("fold", 1, lambda v: (v or "").casefold(),
                          deterministic=True)
-    conn.executescript(SCHEMA)
-    _migrate(conn)
+    # Схема -- один раз на процесс: executescript на каждом соединении
+    # трогает sqlite_master под записью, а соединение открывается на
+    # каждый запрос интерфейса.
+    key = str(Path(path).resolve()).lower()
+    if key not in _SCHEMA_READY:
+        conn.executescript(SCHEMA)
+        _migrate(conn)
+        _SCHEMA_READY.add(key)
     return conn
 
 

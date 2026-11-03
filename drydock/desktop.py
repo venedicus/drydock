@@ -163,12 +163,27 @@ def _serve(port: int):
     return srv, thread
 
 
-def wait_ready(port: int, timeout: float = 30) -> bool:
+def wait_ready(port: int, *, srv=None, thread=None,
+               timeout: float = 90) -> bool:
+    """Дождаться, пока сервер начнёт принимать запросы.
+
+    Спрашиваем сам uvicorn (`started`), а не HTTP: на холодном диске первый
+    ответ /api/state не укладывается в двухсекундный таймаут -- база 274 МБ
+    и обход зеркала занимают диск, -- и живой сервер выглядел мёртвым.
+    Запуск падал с «сервер не поднялся», хотя поднимался.
+
+    Флаг ставится ровно тогда, когда приложение готово отвечать, поэтому
+    ждать дольше нет смысла: либо он появился, либо поток умер.
+    """
     deadline = time.time() + timeout
     while time.time() < deadline:
-        if ours(port):
+        if srv is not None and getattr(srv, "started", False):
             return True
-        time.sleep(0.25)
+        if thread is not None and not thread.is_alive():
+            return False  # сервер упал при старте, ждать нечего
+        if srv is None and ours(port):
+            return True
+        time.sleep(0.05)
     return False
 
 
@@ -215,7 +230,7 @@ def _run(port: int, *, keep_running: bool) -> int:
         port = alt
 
     srv, thread = _serve(port)
-    if not wait_ready(port):
+    if not wait_ready(port, srv=srv, thread=thread):
         log("сервер не поднялся за отведённое время")
         print("Сервер не запустился, смотри " + str(LOG), file=sys.stderr)
         return 1
