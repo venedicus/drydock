@@ -19,7 +19,7 @@ MIT · Windows · macOS · Linux · Python 3.12+ · not affiliated with Yandex
 ![stars](https://img.shields.io/github/stars/venedicus/drydock?color=5c9ded)
 ![last commit](https://img.shields.io/github/last-commit/venedicus/drydock)
 
-![Drydock interface](images/demo.en.gif)
+![Demo: inventory, tree, download, archive and cloud delete](images/demo.en.gif)
 
 ## What it does
 

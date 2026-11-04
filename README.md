@@ -19,7 +19,7 @@ MIT · Windows · macOS · Linux · Python 3.12+ · не связан с Янд�
 ![stars](https://img.shields.io/github/stars/venedicus/drydock?color=5c9ded)
 ![last commit](https://img.shields.io/github/last-commit/venedicus/drydock)
 
-![Демо: опись, архив, здоровье, инструменты, масштаб](docs/images/demo.ru.gif)
+![Демо: опись, дерево и карточка файла, выгрузка, архив, удаление из облака](docs/images/demo.ru.gif)
 
 ## Что умеет
 
