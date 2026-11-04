@@ -167,10 +167,8 @@ def connect(path: Path) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA busy_timeout=30000")
     conn.execute("PRAGMA synchronous=NORMAL")
-    # База 279 МБ, и почти все запросы -- агрегаты по 26 тыс. строк с
-    # соединениями. Без mmap и с кэшем по умолчанию это чтение с диска:
-    # замер 18 октября -- 206 мс на выборку 21 тыс. строк, с mmap 256 МБ
-    # и кэшем 64 МБ -- 77 мс. На раскрытии дерева и итогах это заметно.
+    # Запросы -- агрегаты по всей описи. mmap и большой кэш убирают
+    # чтение с диска на раскрытии дерева и итогах.
     conn.execute("PRAGMA mmap_size=268435456")
     conn.execute("PRAGMA cache_size=-65536")
     # Своя функция «сложить регистр»: встроенные LIKE и lower() понимают
@@ -216,9 +214,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
     if "salvaged_at" not in cols:
         conn.execute("ALTER TABLE local ADD COLUMN salvaged_at INTEGER NOT NULL DEFAULT 0")
 
-    # Опись -- слепок, а облако живёт дальше: 18 октября из него ушли
-    # CzarStream-папки на 710 ГБ, и экран продолжал показывать их как
-    # существующие. Здесь отмечается то, чего в облаке больше нет.
+    # Опись -- слепок, а облако живёт дальше: здесь отмечается то,
+    # чего в облаке больше нет.
     cols = {r["name"] for r in conn.execute("PRAGMA table_info(resources)")}
     if "vanished_at" not in cols:
         conn.execute("ALTER TABLE resources ADD COLUMN vanished_at INTEGER")

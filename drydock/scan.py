@@ -190,12 +190,9 @@ async def scan(conn: sqlite3.Connection, disk: Disk, root: str = "disk:/", *,
                     skip=_skip_dir,
                     on_folder=_folder_done,
                     concurrency=concurrency):
-                # catalog.jsonl -- журнал того, что сервер рассказывал о
-                # файлах, и писать в него стоит только НОВОЕ или
-                # ИЗМЕНИВШЕЕСЯ. Раньше каждая опись дописывала каталог
-                # целиком: 124 тысячи строк на 41 тысячу путей и 332 МБ
-                # почти одинакового текста, который потом ещё и уезжает в
-                # архивы. Полный слепок и так лежит в базе, в resources.raw.
+                # catalog.jsonl -- журнал ответов сервера. Пишем только
+                # новое или изменившееся: полный слепок уже лежит
+                # в resources.raw, а журнал уезжает в архивы.
                 fresh = json.dumps(item, ensure_ascii=False)
                 prev = conn.execute("SELECT raw FROM resources WHERE path=?",
                                     (item.get("path"),)).fetchone()
@@ -265,9 +262,8 @@ async def scan(conn: sqlite3.Connection, disk: Disk, root: str = "disk:/", *,
 def reconcile(conn: sqlite3.Connection, root: str, started: int) -> int:
     """Отметить то, чего в облаке больше нет.
 
-    Опись -- слепок, а облако живёт дальше. 18 октября из него ушли
-    CzarStream-папки на 710 ГБ, и экран продолжал показывать их как
-    существующие: цифры врали, пока кто-то не полез проверять руками.
+    Опись -- слепок, а облако живёт дальше: исчезнувшее из облака
+    надо перестать показывать как существующее.
 
     Делается ТОЛЬКО после полного обхода: прерванный не видел часть дерева,
     и всё недосмотренное он объявил бы пропавшим. Запись не удаляется --
@@ -299,9 +295,8 @@ def preview_dest(cloud_path: str) -> Path:
     """Превью лежит в том же дереве, что и файл -- так его можно
     просто листать глазами в проводнике, рядом с названиями книг."""
     rel = local_for(cloud_path, Path())
-    # ".jpg" добавляется ПОСЛЕ safe_component и тоже растит длину: имя
-    # книги на 250 символов дало бы компонент в 254+4 и Errno 22. Режем
-    # уже окончательное имя -- 17 октября на этом умерла порция превью.
+    # ".jpg" добавляется ПОСЛЕ safe_component и тоже растит длину:
+    # режем уже окончательное имя, а не только облачное.
     return config.PATHS.previews / rel.parent / shorten(rel.name + ".jpg")
 
 
@@ -321,11 +316,9 @@ async def harvest_previews(conn: sqlite3.Connection, disk: Disk,
                "WHERE r.type='file' AND r.preview IS NOT NULL")
         args: list[object] = []
         if not refresh:
-            # Превью, которого сервер не отдал, -- такое же наблюдение со
-            # сроком, как и доступность: ЦОД может вернуться, и пробовать
-            # стоит снова, но не каждый раз. Без срока 3400 битых превью
-            # перезапрашивались при КАЖДОМ проходе, съедая его целиком и
-            # не давая дойти до тех, что ещё не пробовали ни разу.
+            # Превью, которого сервер не отдал, -- наблюдение со сроком:
+            # повторять запрос стоит, но не каждый проход, иначе битые
+            # превью съедают всю порцию.
             from .probe import stale_before
             sql += (" AND (m.path IS NULL OR ("
                     "m.preview_state NOT IN ('ok','missing') AND m.saved_at < ?))")
@@ -346,10 +339,8 @@ async def harvest_previews(conn: sqlite3.Connection, disk: Disk,
 
     async def one(cloud_path: str, url: str) -> None:
         nonlocal done
-        # Один файл не имеет права ронять порцию: имя на 250+ символов,
-        # отказ диска, что угодно ещё. Пишем ошибку в строку файла и идём
-        # дальше. 17 октября OSError Errno 22 на имени книги убил задачу
-        # после часа описи -- 24 577 файлов в базе остались без превью.
+        # Один файл не роняет порцию: ошибку пишем в строку файла
+        # и идём дальше.
         try:
             dest = preview_dest(cloud_path)
             state, status = await disk.fetch_preview(url, dest)
