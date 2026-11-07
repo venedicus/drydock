@@ -75,7 +75,6 @@ python3 -m venv .venv
 - [Как это работает](docs/how-it-works.md) — опись, проба, выгрузка, проверка, архив, удаление
 - [Ограничения](docs/limitations.md) — чего программа не делает и почему
 - [Сравнение](docs/comparison.md) — Drydock, клиент синхронизации и rclone
-- [Аудит 24 октября](docs/archive/audit-2026-10-24.md) — разбор кода и замеры на ту дату
 - [Участие](CONTRIBUTING.md) · [Безопасность](SECURITY.md) · [Изменения](CHANGELOG.md)
 
 ## Чем помочь
