@@ -208,6 +208,160 @@ LOCAL_SYNC_FIRST_DELAY = float(os.environ.get("DRYDOCK_LOCAL_SYNC_DELAY", "15"))
 AUTOPILOT_INTERVAL_H = float(os.environ.get("DRYDOCK_AUTOPILOT_INTERVAL", "2"))
 AUTOPILOT_BATCH = int(os.environ.get("DRYDOCK_AUTOPILOT_BATCH", "400"))
 
+# Таймаут круга: на деградирующем хранилище круг часто ничего не спасает
+# («ожило 0»). Гонять его по обычному расписанию бессмысленно -- это только
+# жжёт квоту API и мешает живой работе. Поэтому пустой круг откладывается
+# на короткую паузу, а после нескольких пустых подряд -- на длинную.
+#
+# idle (пустой) круг -- тот, где revived <= AUTOPILOT_IDLE_REVIVED_MAX. Точечная
+# настройка: каждый порог -- отдельная переменная окружения ИЛИ поле в
+# settings.json (ключ autopilot_config), что выбрано в интерфейсе.
+AUTOPILOT_IDLE_REVIVED_MAX = int(
+    os.environ.get("DRYDOCK_AUTOPILOT_IDLE_REVIVED_MAX", "0"))
+# Короткая пауза после пустого круга -- «попробовать ещё раз через 5 минут».
+# 0 -- перепроверять сразу (круг повторится при следующем опросе, ~60 с).
+AUTOPILOT_IDLE_COOLDOWN_MIN = float(
+    os.environ.get("DRYDOCK_AUTOPILOT_IDLE_COOLDOWN", "5"))
+# Длинная пауза после AUTOPILOT_IDLE_STEPS пустых кругов подряд -- «раз в час».
+# 0 -- и здесь сразу, без длинной паузы.
+AUTOPILOT_IDLE_LONG_MIN = float(
+    os.environ.get("DRYDOCK_AUTOPILOT_IDLE_COOLDOWN_LONG", "60"))
+# Сколько пустых кругов подряд, прежде чем перейти на длинную паузу.
+# 12 * 5 мин = 60 мин -- плавный переход «5 минут -> раз в час».
+AUTOPILOT_IDLE_STEPS = int(
+    os.environ.get("DRYDOCK_AUTOPILOT_IDLE_STEPS", "12"))
+
+# Тот же тайминг для КРУГОВ ВЫГРУЗКИ (download.run_rounds): круг, в котором
+# не спасено ничего, раньше повторялся через жёсткие 60 с -- в логах за
+# 07.11 это круги 50..65 подряд с «спасено 0». Настройка одна на оба вида
+# кругов, чтобы человеку не приходилось помнить, какой из них где.
+LOOP_PAUSE_S = int(os.environ.get("DRYDOCK_LOOP_PAUSE", "300"))
+LOOP_PAUSE_LONG_S = int(os.environ.get("DRYDOCK_LOOP_PAUSE_LONG", "3600"))
+LOOP_PAUSE_STEPS = int(os.environ.get("DRYDOCK_LOOP_PAUSE_STEPS", "12"))
+
+# Ключи точечной настройки кругов, которые человек может задать в
+# интерфейсе (через settings.json). Значения ограничены этим списком,
+# чтобы POST /api/rounds/config не перезаписал лишнего.
+AUTOPILOT_CONFIG_KEYS = (
+    "hours", "batch",
+    "idle_revived_max", "idle_cooldown_min", "idle_long_min", "idle_steps",
+    "loop_pause_s", "loop_pause_long_s", "loop_pause_steps",
+)
+
+
+def autopilot_config() -> dict:
+    """Действующая настройка автопилота.
+
+    Приоритет: переменные окружения (константы выше) -> autopilot_config из
+    settings.json (что выбрано в интерфейсе) -> умолчания. Так одно и то же
+    поле точечно переопределяется без правки кода и перезапуска не требует
+    правки окружения.
+    """
+    data = settings().get("autopilot_config")
+    if not isinstance(data, dict):
+        data = {}
+    cfg = {
+        "hours": AUTOPILOT_INTERVAL_H,
+        "batch": AUTOPILOT_BATCH,
+        "idle_revived_max": AUTOPILOT_IDLE_REVIVED_MAX,
+        "idle_cooldown_min": AUTOPILOT_IDLE_COOLDOWN_MIN,
+        "idle_long_min": AUTOPILOT_IDLE_LONG_MIN,
+        "idle_steps": AUTOPILOT_IDLE_STEPS,
+        "loop_pause_s": LOOP_PAUSE_S,
+        "loop_pause_long_s": LOOP_PAUSE_LONG_S,
+        "loop_pause_steps": LOOP_PAUSE_STEPS,
+    }
+    # Точечное переопределение из settings.json -- привести к нужному типу.
+    for key, default in cfg.items():
+        if key in data and data[key] not in (None, ""):
+            try:
+                cfg[key] = type(default)(data[key])
+            except (TypeError, ValueError):
+                pass
+    # Отрицательная пауза -- это «сразу» (0). Ноль допустим везде: человек
+    # вправе выключить задержку altogether и перепроверять каждый круг.
+    for key, value in cfg.items():
+        if isinstance(value, (int, float)) and value < 0:
+            cfg[key] = type(value)(0)
+    return cfg
+
+
+def autopilot_cooldown_seconds(idle_streak: int,
+                              cfg: dict | None = None) -> float:
+    """Сколько секунд ждать до следующего круга.
+
+    idle_streak == 0 -- обычный интервал (hours). >0 -- прошлый круг был
+    пустым: короткая пауза, а после idle_steps пустых подряд -- длинная.
+    Любая пауза может быть 0 -- тогда круг повторится при следующем опросе
+    петли (раз в ~60 с). Отрицательные значения тоже трактуем как 0.
+    """
+    cfg = cfg or autopilot_config()
+
+    def pause(key: str, scale: float) -> float:
+        return max(0.0, float(cfg[key])) * scale
+
+    if not idle_streak or idle_streak <= 0:
+        return pause("hours", 3600.0)
+    steps = max(1, int(cfg["idle_steps"]))
+    if idle_streak < steps:
+        return pause("idle_cooldown_min", 60.0)
+    return pause("idle_long_min", 60.0)
+
+
+def loop_pause_seconds(empty_streak: int, cfg: dict | None = None) -> int:
+    """Пауза между кругами выгрузки, в которых не спасено ничего.
+
+    Та же лестница, что у автопилота: короткая пауза, а после
+    loop_pause_steps пустых кругов подряд -- длинная. 0 -- «сразу» (круг
+    повторится без ожидания). Отрицательные значения тоже трактуем как 0.
+    """
+    cfg = cfg or autopilot_config()
+    if not empty_streak or empty_streak <= 0:
+        return 0
+    steps = max(1, int(cfg["loop_pause_steps"]))
+    key = "loop_pause_s" if empty_streak < steps else "loop_pause_long_s"
+    return max(0, int(float(cfg[key])))
+
+
+# Готовые варианты для карточки на главном экране. Один клик задаёт СРАЗУ
+# оба вида кругов -- человеку не надо знать, что их два. «Постепенно» -- это
+# умолчания: 5 минут, а после 12 пустых подряд -- час.
+ROUND_PRESETS: dict[str, dict] = {
+    "now": {"hours": 0, "idle_cooldown_min": 0, "idle_long_min": 0,
+            "idle_steps": 1, "loop_pause_s": 0, "loop_pause_long_s": 0,
+            "loop_pause_steps": 1, "idle_revived_max": 0},
+    "m5": {"hours": 2, "idle_cooldown_min": 5, "idle_long_min": 5,
+           "idle_steps": 1, "loop_pause_s": 300, "loop_pause_long_s": 300,
+           "loop_pause_steps": 1, "idle_revived_max": 0},
+    "h1": {"hours": 2, "idle_cooldown_min": 60, "idle_long_min": 60,
+           "idle_steps": 1, "loop_pause_s": 3600, "loop_pause_long_s": 3600,
+           "loop_pause_steps": 1, "idle_revived_max": 0},
+    "gradual": {"hours": 2, "idle_cooldown_min": 5, "idle_long_min": 60,
+                "idle_steps": 12, "loop_pause_s": 300,
+                "loop_pause_long_s": 3600, "loop_pause_steps": 12,
+                "idle_revived_max": 0},
+}
+
+
+def apply_round_preset(name: str) -> dict:
+    """Сохранить готовый вариант и вернуть действующую настройку.
+
+    Возвращает пустой dict для неизвестного имени -- вызывающий проверит
+    это и отдаст 400, а не молча сотрёт настройку.
+    """
+    preset = ROUND_PRESETS.get(name)
+    if not preset:
+        return {}
+    data = settings()
+    cur = data.get("autopilot_config")
+    if not isinstance(cur, dict):
+        cur = {}
+    # Прессет задаёт только тайминг; batch и прочие поля не трогаем.
+    cur.update(preset)
+    data["autopilot_config"] = cur
+    save_settings(data)
+    return autopilot_config()
+
 # Сколько результат пробы считается свежим. «Доступно» -- не свойство
 # файла, а наблюдение с датой: после срока оно показывается как устаревшее
 # и просится на перепроверку.

@@ -205,6 +205,34 @@ main { display: grid; grid-template-columns: 1fr 360px; min-height: 0; }
 .now .bar > i { display: block; height: 100%; background: var(--accent); }
 .now.failed .bar > i { background: var(--bad); }
 .now.done .bar > i { background: var(--ok); }
+/* Карточка тайминга кругов на главном экране. Пресеты -- главное: четыре
+   кнопки видны сразу, а точные поля спрятаны под «Точечная настройка». */
+.card.round { border-color: var(--primary-line); }
+.card.round.flash { animation: round-flash 1.2s ease-out; }
+@keyframes round-flash {
+  0%, 100% { box-shadow: none; }
+  25% { box-shadow: 0 0 0 3px var(--accent); }
+}
+.round-hint { font-size: 11px; color: var(--fg-dim); margin: 0 0 6px; }
+.round-line { font-size: 13px; font-weight: 600; margin: 0 0 8px;
+              line-height: 1.35; }
+.round-presets { display: flex; flex-wrap: wrap; gap: 4px; }
+.round-presets button { font-size: 11px; padding: 4px 9px; border-radius: 5px; }
+.round-presets button.on { background: var(--primary-bg);
+                           border-color: var(--accent); color: var(--primary-fg); }
+.round-state { font-size: 11px; margin-top: 7px; line-height: 1.4; }
+.round-fine { margin-top: 8px; border-top: 1px solid var(--line);
+              padding-top: 6px; }
+.round-fine summary { font-size: 11px; color: var(--fg-dim); cursor: pointer; }
+.round-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+              margin-top: 8px; }
+.round-grid label { display: flex; flex-direction: column; gap: 3px;
+                    font-size: 10px; color: var(--fg-dim); }
+.round-grid input { width: 100%; font-size: 11px; padding: 3px 5px; }
+.round-actions { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.round-actions button { font-size: 11px; padding: 4px 9px;
+                        border: 1px solid var(--line); border-radius: 5px; }
+.round-actions span { font-size: 10px; }
 .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .tile { background: var(--bg-3); border-radius: 6px; padding: 6px 9px; }
 .tile .n { font-size: 16px; font-weight: 600; }

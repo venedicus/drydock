@@ -37,6 +37,7 @@ from . import (
     config,
     db,
     download,
+    emptydirs,
     hostos,
     logging_setup,
     oauth,
@@ -59,6 +60,10 @@ SERVE_PORT = oauth.DEFAULT_PORT
 # резерв диска/счётчик скорости. Они не должны пересекаться, даже если
 # выбраны разные кнопки: «Скачать» + «Круг» ранее писали в один файл.
 DOWNLOAD_JOB_KINDS = frozenset({"download", "download-loop"})
+# Обход облака и уборка по его итогам не должны идти одновременно: пока
+# обход ещё перечисляет папки, удаление меняет само дерево, которое он
+# читает. Обе задачи конфликтуют друг с другом и с автопилотом.
+EMPTY_DIRS_JOB_KINDS = frozenset({"empty-dirs", "empty-dirs-scan"})
 
 log = logging.getLogger("drydock.server")
 
@@ -132,20 +137,93 @@ def local_sync() -> dict:
 
 class AutopilotBody(BaseModel):
     on: bool
+    # Точечная настройка тайминга кругов (см. config.AUTOPILOT_CONFIG_KEYS).
+    # Передаётся опционально -- например, при простом переключении его нет.
+    config: dict | None = None
 
 
 @app.post("/api/autopilot")
 def set_autopilot(body: AutopilotBody) -> dict:
     """Включить или выключить автопилот: перепроверку недоступного и забор
-    ожившего. Круг идёт раз в несколько часов и только когда программа
-    простаивает."""
+    ожившего. Круг идёт по расписанию (см. таймаут круга в config) и только
+    когда программа простаивает.
+
+    body.config -- точечная настройка тайминга: hours, batch,
+    idle_revived_max, idle_cooldown_min, idle_long_min, idle_steps. Лишние
+    ключи игнорируются, пустые -- не перезаписывают текущие."""
     c = conn()
     db.kv_set(c, "autopilot", bool(body.on))
-    # Время последнего круга сбрасываем: выключение и включение не должно
-    # запускать круг немедленно.
+    # Время последнего круга и серию пустых сбрасываем: переключение не
+    # должно запускать круг немедленно, а новая настройка -- помнить старьё.
     db.kv_set(c, "autopilot_last", int(time.time()))
-    return {"on": bool(body.on), "hours": config.AUTOPILOT_INTERVAL_H,
-            "batch": config.AUTOPILOT_BATCH}
+    db.kv_set(c, "autopilot_idle_streak", 0)
+    cfg_in = body.config or {}
+    if isinstance(cfg_in, dict) and cfg_in:
+        data = config.settings()
+        cur = data.get("autopilot_config")
+        if not isinstance(cur, dict):
+            cur = {}
+        for key in config.AUTOPILOT_CONFIG_KEYS:
+            if key in cfg_in and cfg_in[key] not in (None, ""):
+                cur[key] = cfg_in[key]
+        data["autopilot_config"] = cur
+        config.save_settings(data)
+    return {"on": bool(body.on), "config": config.autopilot_config()}
+
+
+class RoundsBody(BaseModel):
+    # Готовый вариант: "now" | "m5" | "h1" | "gradual".
+    preset: str | None = None
+    # Или точечная настройка любого поля из config.AUTOPILOT_CONFIG_KEYS.
+    config: dict | None = None
+
+
+def _save_round_config(cfg_in: dict) -> dict:
+    """Сохранить точечные поля настройки кругов, игнорируя лишние ключи."""
+    data = config.settings()
+    cur = data.get("autopilot_config")
+    if not isinstance(cur, dict):
+        cur = {}
+    for key in config.AUTOPILOT_CONFIG_KEYS:
+        if key in cfg_in and cfg_in[key] not in (None, ""):
+            cur[key] = cfg_in[key]
+    data["autopilot_config"] = cur
+    config.save_settings(data)
+    return config.autopilot_config()
+
+
+def _active_round_preset(cfg: dict) -> str | None:
+    """Какой готовый вариант сейчас выбран (для подсветки кнопки).
+
+    Сравниваем численно: в settings.json значение могло прийти как 2.0,
+    а в пресете стоит 2 -- строковое сравнение не нашло бы ни одного.
+    """
+    for name, preset in config.ROUND_PRESETS.items():
+        if all(cfg.get(k) is not None
+               and float(cfg[k]) == float(v)
+               for k, v in preset.items()):
+            return name
+    return None
+
+
+@app.post("/api/rounds/config")
+def set_rounds_config(body: RoundsBody) -> dict:
+    """Настройка кругов с главного экрана: одним кликом или точечно.
+
+    preset -- готовый вариант, config -- точные значения полей. Смена
+    настройки НЕ трогает включённость автопилота и не сбрасывает его серию:
+    это разные вещи, и крутить переключатель при смене паузы нелогично.
+    """
+    if body.preset:
+        cfg = config.apply_round_preset(body.preset)
+        if not cfg:
+            raise HTTPException(400, {"code": "err.unknownPreset",
+                                     "preset": body.preset})
+    elif isinstance(body.config, dict) and body.config:
+        cfg = _save_round_config(body.config)
+    else:
+        cfg = config.autopilot_config()
+    return {"config": cfg, "preset": _active_round_preset(cfg)}
 
 
 @app.get("/api/settings")
@@ -302,6 +380,9 @@ async def _startup() -> None:
             try:
                 await asyncio.to_thread(cached_totals, True)
                 await asyncio.to_thread(cached_remaining, True)
+                # Сколько пустых деревьев -- для подписи на кнопке. На
+                # холодном кэше описи это до 16 с, поэтому только фон.
+                await asyncio.to_thread(cached_empty_dirs, True)
             except Exception:
                 log.debug("пересчёт итогов не удался", exc_info=True)
             await asyncio.sleep(config.TOTALS_REFRESH_S)
@@ -361,8 +442,13 @@ async def _startup() -> None:
                 c = conn()
                 if not db.kv_get(c, "autopilot"):
                     continue
+                cfg = config.autopilot_config()
                 last = float(db.kv_get(c, "autopilot_last", 0) or 0)
-                if time.time() < last + config.AUTOPILOT_INTERVAL_H * 3600:
+                streak = int(db.kv_get(c, "autopilot_idle_streak", 0) or 0)
+                # Пустой круг откладывается на короткую/длинную паузу, а не
+                # на обычный интервал: на дохлом хранилище гонять его бессмысленно.
+                due = last + config.autopilot_cooldown_seconds(streak, cfg)
+                if time.time() < due:
                     continue
                 # Та же межпроцессная сериализация, что и в _spawn:
                 # две копии Drydock не должны обе решить, что база простаивает.
@@ -378,7 +464,7 @@ async def _startup() -> None:
                     if c.in_transaction:
                         c.rollback()
                     raise
-                log.info("job %s (autopilot): круг", job_id)
+                log.info("job %s (autopilot): круг (пустых подряд: %s)", job_id, streak)
                 try:
                     async with _disk() as disk:
                         result = await autopilot.round_once(c, disk,
@@ -389,8 +475,22 @@ async def _startup() -> None:
                 state = _job_state(result, db.job_cancelled(c, job_id))
                 db.job_finish(c, job_id, state, str(result)[:900])
                 db.kv_set(c, "autopilot_last", int(time.time()))
-                log.info("job %s (autopilot): %s -- %s", job_id, state,
-                         str(result)[:300])
+                # Круг пустой, если ничего не ожило (или перепроверять было
+                # нечего). Такой круг считаем idle и наращиваем серию; как
+                # только что-то ожило -- серия сбрасывается.
+                revived = int(result.get("revived", 0) or 0)
+                idle = (not result.get("cancelled")
+                        and revived <= int(cfg["idle_revived_max"]))
+                if result.get("note") == "перепроверять нечего":
+                    idle = True
+                new_streak = 0 if not idle else streak + 1
+                db.kv_set(c, "autopilot_idle_streak", new_streak)
+                next_due = int(time.time()) + int(
+                    config.autopilot_cooldown_seconds(new_streak, cfg))
+                log.info("job %s (autopilot): %s -- %s (пустых подряд: %s, "
+                         "следующий круг: %s)", job_id, state,
+                         str(result)[:200], new_streak,
+                         time.strftime("%H:%M", time.localtime(next_due)))
             except Exception:
                 log.debug("круг автопилота не удался", exc_info=True)
 
@@ -526,6 +626,8 @@ def _spawn(kind: str, coro_factory, total: int = 0,
         conflict_kinds = None  # особый случай: любая running-задача
     elif kind in DOWNLOAD_JOB_KINDS:
         conflict_kinds = DOWNLOAD_JOB_KINDS | {"autopilot"}
+    elif kind in EMPTY_DIRS_JOB_KINDS:
+        conflict_kinds = EMPTY_DIRS_JOB_KINDS | {"autopilot"}
     else:
         conflict_kinds = frozenset({kind, "autopilot"})
     c.execute("BEGIN IMMEDIATE")
@@ -622,6 +724,53 @@ def cached_totals(force: bool = False) -> dict:
     value = tree.totals(conn())
     _totals_cache.update(at=time.monotonic(), value=value)
     return value
+
+
+# Число пустых деревьев для кнопки в шапке дерева. Считать это на каждый
+# опрос состояния нельзя: опись на 42 тыс. строк читается ~0.27 с, а с
+# холодным кэшем диска -- до 16 с. Тот же приём, что и с итогами: свежесть
+# держит фоновая задача, обработчик читает готовое.
+_empty_cache: dict = {"at": 0.0, "value": None}
+
+
+def cached_empty_dirs(force: bool = False) -> dict:
+    """Готовое число. Без force НИКОГДА не считает.
+
+    Первый запрос состояния приходит сразу после старта, когда опись ещё
+    холодная: пересчёт в обработчике заставил бы человека ждать 16 с.
+    Пока фон не посчитал, честно отдаём нули -- кнопка просто без числа.
+    """
+    if force:
+        value = emptydirs.preview(conn(), sample=0)
+        _empty_cache.update(at=time.monotonic(), value=value)
+        return value
+    return _empty_cache["value"] or {"trees": 0, "folders": 0,
+                                     "sample": [], "confirm": 0}
+
+
+# Результат полного ЖИВОГО обхода облака. Он не переживает перезапуск
+# сервера намеренно: между обходом и удалением могли положить файлы, а
+# stale-список выдавать за свежий нельзя. `delete_empty` всё равно
+# перепроверяет каждый корень, но человек должен видеть, что список
+# всё-таки датирован обходом, а не «прямо сейчас».
+_live_scan_cache: dict = {"at": 0.0, "value": None, "root": "disk:/"}
+LIVE_SCAN_TTL = 30 * 60
+
+
+def live_scan_preview() -> dict:
+    """Что нашёл последний полный обход, без обращения к сети."""
+    value = _live_scan_cache["value"]
+    if value is None:
+        return {"source": "live", "needs_scan": True, "stale": False,
+                "trees": 0, "folders": 0, "sample": [], "confirm": 0,
+                "scanned": 0, "blocked": 0, "age": 0, "complete": False}
+    age = int(time.monotonic() - _live_scan_cache["at"])
+    stale = age > LIVE_SCAN_TTL
+    return {k: value[k] for k in
+            ("source", "trees", "folders", "sample", "confirm",
+             "scanned", "blocked", "complete")} | {
+        "needs_scan": False, "stale": stale, "age": age,
+        "root": _live_scan_cache["root"]}
 
 
 _remaining_cache: dict = {"at": 0.0, "value": None}
@@ -726,8 +875,18 @@ def state(fresh: bool = False) -> dict:
         # Автопилот и статистика узлов хранения.
         "autopilot": bool(db.kv_get(c, "autopilot")),
         "autopilot_last_at": db.kv_get(c, "autopilot_last"),
-        "autopilot_config": {"hours": config.AUTOPILOT_INTERVAL_H,
-                             "batch": config.AUTOPILOT_BATCH},
+        # Полная действующая настройка тайминга + текущая серия пустых
+        # кругов и рассчитанное время следующего круга -- для интерфейса.
+        "autopilot_config": config.autopilot_config(),
+        "round_preset": _active_round_preset(config.autopilot_config()),
+        "round_preset_names": list(config.ROUND_PRESETS),
+        "autopilot_idle_streak": int(
+            db.kv_get(c, "autopilot_idle_streak", 0) or 0),
+        "autopilot_next_at": int(
+            float(db.kv_get(c, "autopilot_last", 0) or 0)
+            + config.autopilot_cooldown_seconds(
+                int(db.kv_get(c, "autopilot_idle_streak", 0) or 0),
+                config.autopilot_config())),
         "hosts": autopilot.host_liveness(c),
         "auth": secretstore.status(),
         "redirect_uri": oauth.redirect_uri(SERVE_PORT),
@@ -745,6 +904,13 @@ def state(fresh: bool = False) -> dict:
         # Остаток с разбивкой по состояниям: без неё «осталось» читается
         # как «ещё можно взять», хотя часть облако уже не отдаёт.
         "remaining": left,
+        # Сколько пустых деревьев нашлось по описи -- подпись на кнопке
+        # рядом с деревом, чтобы уборка была видна не только после клика.
+        "empty_dirs": cached_empty_dirs(),
+        # Результат полного живого обхода (если человек его запускал):
+        # чтобы кнопка не показывала старое число по описи, когда уже
+        # есть свежий список по облаку.
+        "empty_dirs_live": live_scan_preview(),
         # Следующий шаг: программа сама считает, что важнее сделать.
         "next_step": next_step(c, totals, left=left),
         "last_scan": db.kv_get(c, "last_scan"),
@@ -1065,17 +1231,16 @@ def hosts_try(body: HostsTryBody) -> dict:
     if not paths:
         raise HTTPException(400, {"code": "err.nothingToProbe", **what})
     job_id = _spawn("download-loop", lambda disk, jid: download.run_rounds(
-        c, disk, paths, salvage=False, job_id=jid,
-        pause_s=60), total=len(paths))
+        c, disk, paths, salvage=False, job_id=jid), total=len(paths))
     return {"job": job_id, "files": len(paths), **what}
 
 
 class LoopBody(Selection):
     salvage: bool = False
-    # Пауза между кругами, в которых не удалось вытащить ничего. Нужна,
-    # чтобы безнадёжный круг не превращался в долбёжку по раненому
-    # хранилищу: он пройдёт мгновенно и начнётся снова.
-    pause_s: int = 60
+    # Явная пауза -- разовый override из API. По умолчанию (None) паузу
+    # берёт настройка кругов с главного экрана: короткая, а после N пустых
+    # подряд -- длинная. Так «раз в 5 минут / раз в час» работает и здесь.
+    pause_s: int | None = None
 
 
 @app.post("/api/download/loop/plan")
@@ -1143,10 +1308,14 @@ def start_loop(body: LoopBody) -> dict:
     if not targets:
         raise HTTPException(400, {"code": "err.allOnDisk"})
 
+    # Явный pause_s из API сохраняет прежний смысл (разовый override),
+    # но 0 теперь честно означает «сразу», а не подменяется пятёркой.
+    override = None if body.pause_s is None else max(0, int(body.pause_s))
+
     async def work(disk: Disk, job_id: int) -> Any:
         return await download.run_rounds(
             conn(), disk, chosen, salvage=body.salvage, job_id=job_id,
-            pause_s=max(5, int(body.pause_s)))
+            pause_s=override)
     return {"job": _spawn("download-loop", work, len(targets),
                           concurrency=config.LOOP_CONCURRENCY),
             "files": len(targets)}
@@ -1291,6 +1460,106 @@ def cloud_delete(body: DeleteBody) -> dict:
                                   confirm=body.confirm,
                                   permanently=body.permanently, job_id=job_id)
     return {"job": _spawn("cloud-delete", work, len(allowed))}
+
+
+# ── пустые папки в облаке ────────────────────────────────────────────
+#
+# Удаление ПАПОК, а не файлов: другое действие, другая кнопка и другой
+# эндпоинт. Список корней сервер считает сам из базы -- клиент не может
+# подсунуть произвольный путь на удаление, он передаёт только подтверждение
+# и выбор «в Корзину / навсегда».
+
+
+class EmptyDirsBody(BaseModel):
+    confirm: int = -1
+    # Пустые папки не занимают квоту, поэтому Корзина -- безопасное
+    # умолчание. Безвозвратное удаление требует явного выбора.
+    permanently: bool = False
+    root: str = "disk:/"
+    # "inventory" -- кандидаты из базы (быстро, но опись могла устареть).
+    # "live" -- результат полного живого обхода; список берётся из кэша
+    # обхода, клиент по-прежнему не передаёт пути.
+    source: str = "inventory"
+
+
+class EmptyDirsScanBody(BaseModel):
+    root: str = "disk:/"
+
+
+@app.get("/api/empty-dirs/preview")
+def empty_dirs_preview(root: str = "disk:/",
+                       source: str = "inventory") -> dict:
+    if source == "live":
+        return live_scan_preview()
+    return emptydirs.preview(conn(), root) | {"source": "inventory"}
+
+
+@app.post("/api/empty-dirs/scan")
+def empty_dirs_scan(body: EmptyDirsScanBody) -> dict:
+    """Полный живой обход облака: найти пустые папки, которых нет в описи.
+
+    Это ~17 тыс. запросов на реальной коллекции, поэтому отдельная задача
+    с прогрессом и кнопкой «стоп». Результат живёт только в памяти: после
+    перезапуска сервера его надо получить заново.
+    """
+    async def work(disk: Disk, job_id: int) -> Any:
+        stop = db.CancelWatch(conn(), job_id)
+        async with stop:
+            def progress(done: int, found: int) -> None:
+                db.job_progress(conn(), job_id, done, None,
+                                f"папок: {done}, деревьев: {found}")
+            result = await emptydirs.scan_live(
+                disk, body.root, should_stop=stop, on_progress=progress)
+        if result["complete"]:
+            _live_scan_cache.update(at=time.monotonic(), value=result,
+                                    root=body.root)
+        # Неполный обход не должен затирать прошлый удачный результат:
+        # иначе прерванная задача тихо подменила бы хороший список пустым.
+        # `failed` здесь -- не сетевая ошибка, а честный признак того, что
+        # обход оборвался: без него _job_state написал бы «готово» на
+        # неполном результате, а человек убрал бы папки по обрывку списка.
+        return {"scanned": result["scanned"], "trees": result["trees"],
+                "folders": result["folders"], "blocked": result["blocked"],
+                "complete": int(result["complete"]),
+                "failed": 0 if result["complete"] else 1}
+    return {"job": _spawn("empty-dirs-scan", work)}
+
+
+@app.post("/api/empty-dirs")
+def empty_dirs_delete(body: EmptyDirsBody) -> dict:
+    if body.source == "live":
+        snap = _live_scan_cache["value"]
+        if snap is None or not snap.get("complete"):
+            raise HTTPException(400, {"code": "err.liveScanNeeded"})
+        if time.monotonic() - _live_scan_cache["at"] > LIVE_SCAN_TTL:
+            raise HTTPException(400, {"code": "err.liveScanStale"})
+        roots = list(snap["roots"])
+    elif body.source == "inventory":
+        roots = emptydirs.tree_roots(emptydirs.candidates(conn(), body.root))
+    else:
+        raise HTTPException(400, {"code": "err.badEmptyDirsSource"})
+    if not roots:
+        raise HTTPException(400, {"code": "err.noEmptyDirs"})
+    if body.confirm != len(roots):
+        raise HTTPException(400, {"code": "err.confirmMismatch",
+                                  "allowed": len(roots),
+                                  "got": body.confirm})
+
+    async def work(disk: Disk, job_id: int) -> Any:
+        try:
+            return await emptydirs.delete_empty(
+                conn(), disk, roots, confirm=body.confirm,
+                permanently=body.permanently, job_id=job_id)
+        finally:
+            # Счётчик на кнопке должен сразу показать, что пустых папок
+            # стало меньше, -- не ждать очередного фонового тика. Ошибка
+            # пересчёта не должна портить итог самой уборки.
+            with contextlib.suppress(Exception):
+                await asyncio.to_thread(cached_empty_dirs, True)
+            # После уборки список обхода устарел: удалённые корни больше
+            # нельзя предлагать повторно.
+            _live_scan_cache.update(at=0.0, value=None)
+    return {"job": _spawn("empty-dirs", work, len(roots))}
 
 
 # ── прогресс ─────────────────────────────────────────────────────────

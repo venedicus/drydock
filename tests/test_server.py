@@ -69,11 +69,22 @@ if pytest is not None:
 class FakeDisk:
     """Ровно столько, сколько трогают обработчики на пустом каталоге."""
 
-    def __init__(self) -> None:
+    def __init__(self, contents: dict | None = None) -> None:
         self.deleted: list[tuple[str, bool]] = []
+        self.contents = contents or {}
+        self.listed: list[str] = []
 
     async def aclose(self) -> None:
         return None
+
+    async def listdir(self, path: str, *, offset: int = 0,
+                      limit: int = 500) -> dict:
+        """Уборка пустых папок перечисляет дерево перед удалением."""
+        self.listed.append(path)
+        items = self.contents.get(path, [])
+        return {"type": "dir", "path": path,
+                "_embedded": {"items": items[offset:offset + limit],
+                              "total": len(items)}}
 
     async def delete(self, path: str, *, permanently: bool = True):
         self.deleted.append((path, permanently))
@@ -313,6 +324,116 @@ def test_autopilot_toggle(client: TestClient) -> None:
     r = client.post("/api/autopilot", json={"on": False})
     assert client.get("/api/state").json()["autopilot"] is False
     print("автопилот: включение, выключение, отражение в состоянии")
+
+
+def test_autopilot_config_persist(client: TestClient) -> None:
+    """Точечная настройка тайминга: сохраняется в settings.json и видна в state.
+
+    Пустой круг после этого откладывается на короткую паузу, а не на обычный
+    интервал -- проверяем расчёт cooldown через состояние.
+    """
+    from drydock import config
+
+    # Обычный интервал и короткая пауза после пустого круга.
+    r = client.post("/api/autopilot", json={
+        "on": True,
+        "config": {"hours": 3, "idle_revived_max": 0,
+                   "idle_cooldown_min": 7, "idle_long_min": 45, "idle_steps": 4},
+    })
+    assert r.status_code == 200, r.text[:200]
+    cfg = r.json()["config"]
+    assert cfg["hours"] == 3, cfg
+    assert cfg["idle_cooldown_min"] == 7, cfg
+    assert cfg["idle_steps"] == 4, cfg
+
+    st = client.get("/api/state").json()
+    # cooldown для пустого круга (streak>0) -- короткая пауза 7 минут.
+    assert config.autopilot_cooldown_seconds(1, st["autopilot_config"]) == 7 * 60
+    # после idle_steps пустых подряд -- длинная пауза 45 минут.
+    assert config.autopilot_cooldown_seconds(4, st["autopilot_config"]) == 45 * 60
+    # продуктивный круг (streak 0) -- обычный интервал 3 часа.
+    assert config.autopilot_cooldown_seconds(0, st["autopilot_config"]) == 3 * 3600
+
+    # Лишние ключи не попадают в сохранённую настройку.
+    saved = config.settings().get("autopilot_config", {})
+    assert "hours" in saved and "idle_steps" in saved
+    print("автопилот: точечная настройка тайминга сохраняется и влияет на cooldown")
+
+
+def test_autopilot_immediate_and_clamp(client: TestClient) -> None:
+    """Паузу можно поставить в 0 -- перепроверка сразу; отрицательные в 0."""
+    from drydock import config
+
+    # 0 -- валидное значение для всех трёх пауз, а не «нет значения».
+    r = client.post("/api/autopilot", json={
+        "on": True,
+        "config": {"hours": 0, "idle_cooldown_min": 0, "idle_long_min": 0},
+    })
+    assert r.status_code == 200, r.text[:200]
+    cfg = r.json()["config"]
+    assert cfg["hours"] == 0, cfg
+    assert cfg["idle_cooldown_min"] == 0, cfg
+    assert cfg["idle_long_min"] == 0, cfg
+    # Любая серия пустых кругов -- нулевая пауза, «сразу».
+    for streak in (0, 1, 5, 12, 100):
+        assert config.autopilot_cooldown_seconds(streak, cfg) == 0, (streak, cfg)
+
+    # Отрицательные значения трактуем как 0, а не как паузу «в прошлое».
+    assert config.autopilot_cooldown_seconds(
+        1, {**cfg, "idle_cooldown_min": -10}) == 0
+    assert config.autopilot_cooldown_seconds(
+        0, {**cfg, "hours": -1}) == 0
+
+    # Восстановить умолчания для остальных тестов.
+    client.post("/api/autopilot", json={
+        "on": False,
+        "config": {"hours": config.AUTOPILOT_INTERVAL_H,
+                   "idle_cooldown_min": config.AUTOPILOT_IDLE_COOLDOWN_MIN,
+                   "idle_long_min": config.AUTOPILOT_IDLE_LONG_MIN},
+    })
+    print("автопилот: пауза 0 -- сразу, отрицательные не уходят в прошлое")
+
+
+def test_rounds_config_presets(client: TestClient) -> None:
+    """Карточка «Круги»: один клик меняет оба вида кругов и виден в state.
+
+    Пресет не должен трогать включённость автопилота: это разные вещи.
+    """
+    from drydock import config
+
+    before = client.get("/api/state").json()["autopilot"]
+    r = client.post("/api/rounds/config", json={"preset": "m5"})
+    assert r.status_code == 200, r.text[:200]
+    assert r.json()["preset"] == "m5", r.json()
+    cfg = r.json()["config"]
+    assert cfg["loop_pause_s"] == 300, cfg
+    assert cfg["loop_pause_long_s"] == 300, cfg
+    assert cfg["idle_cooldown_min"] == 5, cfg
+
+    st = client.get("/api/state").json()
+    assert st["round_preset"] == "m5", st.get("round_preset")
+    assert st["autopilot"] == before, "пресет не должен переключать автопилот"
+    assert "now" in st["round_preset_names"]
+
+    # «Сразу» -- нулевая пауза у обоих механизмов.
+    r = client.post("/api/rounds/config", json={"preset": "now"})
+    cfg = r.json()["config"]
+    assert cfg["loop_pause_s"] == 0 and cfg["hours"] == 0, cfg
+    assert config.loop_pause_seconds(5, cfg) == 0, cfg
+    assert config.autopilot_cooldown_seconds(1, cfg) == 0, cfg
+
+    # Точечная настройка любого поля снимает подсветку пресета.
+    r = client.post("/api/rounds/config",
+                    json={"config": {"loop_pause_s": 42}})
+    assert r.json()["config"]["loop_pause_s"] == 42, r.json()
+    assert r.json()["preset"] is None, r.json()
+
+    bad = client.post("/api/rounds/config", json={"preset": "nope"})
+    assert bad.status_code == 400, bad.text[:200]
+
+    # Вернуть умолчания для остальных тестов.
+    client.post("/api/rounds/config", json={"preset": "gradual"})
+    print("круги: пресеты, точечная настройка, подсветка в состоянии")
 
 
 def test_host_stats(client: TestClient) -> None:
@@ -751,6 +872,126 @@ def test_assets_versioned(client: TestClient) -> None:
 FAKE = FakeDisk()
 
 
+def test_empty_dirs_endpoints(client: TestClient) -> None:
+    """Превью, подтверждение и реально дошедшая до конца задача уборки.
+
+    Свой корень внутри облака: тест не зависит от того, какие папки
+    насоздавали соседние проверки в общей базе.
+    """
+    from drydock import db as db_mod
+
+    root = "disk:/edtest"
+    c = server.conn()
+    for p in (root, root + "/inner"):
+        db_mod.upsert_resource(c, {"path": p, "name": p.rsplit("/", 1)[-1],
+                                   "type": "dir", "size": 0})
+    pre = client.get("/api/empty-dirs/preview", params={"root": root}).json()
+    assert pre["trees"] == 1 and pre["folders"] == 1, pre
+    assert pre["confirm"] == pre["trees"], pre
+    assert "empty_dirs" in client.get("/api/state").json()
+
+    bad = client.post("/api/empty-dirs",
+                      json={"root": root, "confirm": 99})
+    assert bad.status_code == 400, bad.text
+    assert bad.json()["detail"]["code"] == "err.confirmMismatch", bad.text
+
+    FAKE.deleted.clear()
+    go = client.post("/api/empty-dirs",
+                     json={"root": root, "confirm": pre["confirm"]})
+    assert go.status_code == 200, go.text
+    job = wait_job(client, go.json()["job"])
+    assert job.get("state") == "done", job
+    # По умолчанию -- в Корзину, а не безвозвратно.
+    assert (root + "/inner", False) in FAKE.deleted, FAKE.deleted
+
+    again = client.post("/api/empty-dirs",
+                        json={"root": root, "confirm": 1})
+    assert again.status_code == 400, again.text
+    assert again.json()["detail"]["code"] == "err.noEmptyDirs", again.text
+    print("пустые папки: превью, confirm, задача до конца, повтор не предлагает")
+
+
+def test_empty_dirs_live_scan(client: TestClient) -> None:
+    """Полный живой обход находит папки, которых НЕТ в описи.
+
+    Проверяем весь путь: отдельная задача -> превью по облаку -> удаление
+    по живому списку -> сброс кэша. Клиент не передаёт пути ни разу.
+    """
+    import time as _time
+
+    # Облако с двумя пустыми деревьями; в базе их нет вообще. Свой
+    # корень -- соседние проверки в общей базе не влияют на числа.
+    root = "disk:/livescan"
+    contents = {
+        root: [{"type": "dir", "path": root + "/Fresh"},
+               {"type": "dir", "path": root + "/Other"}],
+        root + "/Fresh": [{"type": "dir", "path": root + "/Fresh/Deep"}],
+        root + "/Fresh/Deep": [],
+        root + "/Other": [],
+    }
+    disk = FakeDisk(contents)
+    old = server._disk
+    server._disk = lambda concurrency=None: disk
+    server._live_scan_cache.update(at=0.0, value=None)
+    try:
+        assert client.get("/api/empty-dirs/preview",
+                          params={"root": root}).json()["trees"] == 0, \
+            "в описи этих папок быть не должно"
+        need = client.get("/api/empty-dirs/preview",
+                          params={"source": "live", "root": root}).json()
+        assert need["needs_scan"] is True, need
+        blocked = client.post("/api/empty-dirs", json={
+            "confirm": 1, "source": "live"})
+        assert blocked.status_code == 400, blocked.text
+        assert blocked.json()["detail"]["code"] == "err.liveScanNeeded"
+
+        scan = client.post("/api/empty-dirs/scan", json={"root": root})
+        assert scan.status_code == 200, scan.text
+        job = wait_job(client, scan.json()["job"])
+        assert job.get("state") == "done", job
+
+        pre = client.get("/api/empty-dirs/preview",
+                         params={"source": "live"}).json()
+        assert pre["needs_scan"] is False and pre["complete"] is True, pre
+        assert pre["trees"] == 2 and pre["folders"] == 3, pre
+        assert pre["confirm"] == pre["trees"], pre
+        assert pre["scanned"] == 4, pre
+        assert "empty_dirs_live" in client.get("/api/state").json()
+
+        disk.deleted.clear()
+        go = client.post("/api/empty-dirs", json={
+            "confirm": pre["confirm"], "source": "live"})
+        assert go.status_code == 200, go.text
+        done = wait_job(client, go.json()["job"])
+        assert done.get("state") == "done", done
+        assert sorted(p for p, _ in disk.deleted) == [
+            root + "/Fresh", root + "/Other"], disk.deleted
+        # После уборки обход не предлагает удалённые корни повторно.
+        after = client.get("/api/empty-dirs/preview",
+                           params={"source": "live"}).json()
+        assert after["needs_scan"] is True, after
+
+        # Протухший результат: удалять по нему нельзя, сколько ни подтверждай.
+        server._live_scan_cache.update(
+            at=_time.monotonic() - server.LIVE_SCAN_TTL - 1,
+            value={"roots": ["disk:/Fresh"], "trees": 1, "folders": 1,
+                   "sample": [], "confirm": 1, "source": "live",
+                   "scanned": 4, "blocked": 0, "complete": True})
+        stale = client.post("/api/empty-dirs", json={
+            "confirm": 1, "source": "live"})
+        assert stale.status_code == 400, stale.text
+        assert stale.json()["detail"]["code"] == "err.liveScanStale"
+
+        bad = client.post("/api/empty-dirs", json={
+            "confirm": 1, "source": "whatever"})
+        assert bad.status_code == 400
+        assert bad.json()["detail"]["code"] == "err.badEmptyDirsSource"
+    finally:
+        server._disk = old
+        server._live_scan_cache.update(at=0.0, value=None)
+    print("живой обход: облако вместо описи, confirm, стоп-флаг, TTL")
+
+
 def main() -> int:
     # Принимает параллельность: проба запускается на своём, большем лимите.
     server._disk = lambda concurrency=None: FAKE
@@ -767,6 +1008,9 @@ def main() -> int:
         test_revived_counts_real_returns(client)
         test_local_sync(client)
         test_autopilot_toggle(client)
+        test_autopilot_config_persist(client)
+        test_autopilot_immediate_and_clamp(client)
+        test_rounds_config_presets(client)
         test_host_stats(client)
         test_autopilot_round(client)
         test_next_step(client)
@@ -774,6 +1018,8 @@ def main() -> int:
         test_health_endpoint(client)
         test_account_in_state(client)
         test_job_state_vocabulary(client)
+        test_empty_dirs_endpoints(client)
+        test_empty_dirs_live_scan(client)
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
             test_settings_endpoints(client, Path(d))
             test_adopt_endpoints(client, Path(d))

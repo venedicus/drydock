@@ -97,8 +97,12 @@ may be temporary, and a file may become available again later.
 
 ## Interface
 
-- **Four buttons** — inventory, loop, archive, delete. The number inside
-  answers “how much with this selection”.
+- **Buttons** — inventory, loop, archive, delete. The number inside answers
+  “how much with this selection”. Next to the tree is “Empty folders”: cleanup
+  of folder cascades that have no files left.
+- **Rounds card** — right on the main screen: four pause presets, autopilot
+  and point-by-point tuning of every threshold. The setting is re-read each
+  round, so switching a preset affects an already running mode.
 - **Lenses** “Now / Was / On disk” change every number at once: what the cloud
   holds, what the inventory had, what you have.
 - **Health** — failure reasons reduced to plain words, nodes with failures,

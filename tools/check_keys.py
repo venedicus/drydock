@@ -26,9 +26,12 @@ LANGS = ["ru", "en", "tr", "kk", "uz", "az"]
 PLURAL = re.compile(r"\.(one|few|many|other)$")
 
 # Семейства, которые собираются в коде по частям: их проверяем по списку
-# значений из сервера, а не по литералам.
+# значений из сервера, а не по литералам. `round.preset.tip.` и
+# `round.preset.` собираются из dataset.preset кнопок главного экрана --
+# литерала с полным ключом в разметке нет, но ключи используются.
 DYNAMIC = ("job.", "job.state.", "jobmsg.", "err.", "theme.", "reason.",
-           "n.", "next.", "unit.", "auth.crypto.")
+           "n.", "next.", "unit.", "auth.crypto.",
+           "round.preset.tip.")
 
 
 def strip_comments(text: str) -> str:

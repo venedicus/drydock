@@ -572,7 +572,7 @@ def pending_targets(conn: sqlite3.Connection,
 async def run_rounds(conn: sqlite3.Connection, disk: Disk,
                      paths: list[str] | None = None, *, salvage: bool = False,
                      job_id: int | None = None,
-                     pause_s: int = 60, max_rounds: int = 0) -> dict:
+                     pause_s: int | None = None, max_rounds: int = 0) -> dict:
     """Круг за кругом, пока не нажмут «стоп».
 
     Зачем так. Доступность в этом облаке гниёт и возвращается: из 60
@@ -591,9 +591,29 @@ async def run_rounds(conn: sqlite3.Connection, disk: Disk,
     failed_total = 0
     no_space = False
     history: list[int] = []
+    # Явный pause_s -- разовый override (тесты, точечный вызов). Без него
+    # паузу считает настройка кругов: короткая, а после N пустых подряд --
+    # длинная. Так раненое хранилище не долбят каждую минуту.
+    # cfg перечитываем каждый круг: человек может сменить пресет на главном
+    # экране, пока режим уже идёт, и не должен ради этого жать «стоп».
+    fixed_pause = pause_s
+    cfg = config.autopilot_config()
+    empty_streak = 0
+
+    def next_pause() -> int:
+        if fixed_pause is not None:
+            return max(0, int(fixed_pause))
+        return config.loop_pause_seconds(empty_streak, cfg)
 
     async def nap(seconds: int) -> None:
-        """Пауза между кругами, прерываемая «стопом»."""
+        """Пауза между кругами, прерываемая «стопом». 0 -- сразу.
+
+        Даже при нулевой паузе надо уступить цикл событий: без await
+        вечный режим превратился бы в горячий цикл и повесил сервер.
+        """
+        if seconds <= 0:
+            await asyncio.sleep(0)
+            return
         for _ in range(max(1, seconds * 2)):
             if stop():
                 return
@@ -601,6 +621,8 @@ async def run_rounds(conn: sqlite3.Connection, disk: Disk,
 
     async with stop:
         while not stop():
+            if fixed_pause is None:
+                cfg = config.autopilot_config()
             targets = pending_targets(conn, paths,
                                       cooldown_min=config.LOOP_COOLDOWN_MIN)
             rounds += 1
@@ -612,7 +634,8 @@ async def run_rounds(conn: sqlite3.Connection, disk: Disk,
                                     job_msg("loop.empty", n=rounds))
                 if max_rounds and rounds >= max_rounds:
                     break
-                await nap(pause_s)
+                empty_streak += 1
+                await nap(next_pause())
                 continue
 
             log.info("круг %s: в очереди %s файлов", rounds, len(targets))
@@ -630,8 +653,11 @@ async def run_rounds(conn: sqlite3.Connection, disk: Disk,
             # и сказать, что случилось.
             no_space = bool(res.get("no_space"))
             history.append(got)
-            log.info("круг %s: спасено %s (всего за режим %s)",
-                     rounds, got, saved_total)
+            # «Пустой» круг -- спасено не больше порога. Серия таких кругов
+            # удлиняет паузу; как только что-то спасено, лестница сбрасывается.
+            empty_streak = empty_streak + 1 if got <= int(cfg["idle_revived_max"]) else 0
+            log.info("круг %s: спасено %s (всего за режим %s, пустых подряд %s)",
+                     rounds, got, saved_total, empty_streak)
             if job_id is not None:
                 db.job_progress(
                     conn, job_id, len(targets), len(targets),
@@ -647,8 +673,11 @@ async def run_rounds(conn: sqlite3.Connection, disk: Disk,
                 break
             # Пауза нужна: без неё круг, в котором всё провалилось, начнётся
             # мгновенно и превратится в долбёжку по раненому хранилищу.
-            if got == 0:
-                await nap(pause_s)
+            if got <= int(cfg["idle_revived_max"]):
+                pause = next_pause()
+                log.info("круг %s: пауза %s с (пустых подряд %s)",
+                         rounds, pause, empty_streak)
+                await nap(pause)
 
     return {"rounds": rounds, "saved": saved_total, "failed": failed_total,
             "no_space": no_space, "per_round": history[-20:],

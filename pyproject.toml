@@ -1,6 +1,6 @@
 [project]
 name = "drydock"
-version = "0.7.1"
+version = "0.7.2"
 description = "Rescue files from a failing Yandex.Disk: inventory, availability probe, selective download, 7z archiving"
 readme = "README.md"
 license = { text = "MIT" }

@@ -27,12 +27,14 @@ MIT · Windows · macOS · Linux · Python 3.12+ · Yandex bilan bogʻliq emas
 | **Roʻyxat** | bulutni aylanib nomi, oʻlchami, xeshlari va daraxtdagi joyini yozadi — endi yuklanmaydiganlar bilan birga |
 | **Tekshiruv** | yuklamasdan ishlashini tekshiradi: birinchi va oxirgi bayt |
 | **Tur** | berilganning hammasini yuklaydi, berilmaydiganlarini toʻxtatmaguningizcha qayta tekshiradi |
+| **Turlar** | bosh ekrandagi karta: toʻrtta pauza andozasi, avtopilot, har bir chegara uchun alohida sozlama |
 | **Arxiv** | qutqarilganni 3.9 GB, 1.9 GB jildlarga yoki bitta faylga jamlaydi |
 | **Oʻchirish** | tekshirilganlar bilan bulutni boʻshatadi; uch daraja |
+| **Boʻsh papkalar** | fayli qolmagan papka daraxtlarini olib tashlaydi; qaror faqat bulutning jonli mazmuniga koʻra |
 | **Salomatlik** | nega chiqmayotganini koʻrsatadi: sabablar, tugunlar, vazifalar |
 
 Yana: koʻrish rasmlari, qoʻlda qutqarilgan fayllarni hisobga olish, oynani disk
-bilan solishtirish, avtopilot, `Ctrl+K` palitrasi, olti til, qorongʻi va yorugʻ mavzu.
+bilan solishtirish, `Ctrl+K` palitrasi, olti til, qorongʻi va yorugʻ mavzu.
 
 ## Tez boshlash
 

@@ -139,7 +139,8 @@ def eligible(conn: sqlite3.Connection, paths: list[str] | None = None, *,
     return ok, blocked
 
 
-def _audit(entry: dict) -> None:
+def audit(entry: dict) -> None:
+    """Одна строка в журнале необратимых действий с облаком."""
     path = config.PATHS.audit
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(extended(path), "a", encoding="utf-8") as fh:
@@ -191,7 +192,7 @@ async def delete(conn: sqlite3.Connection, disk: Disk, paths: list[str], *,
                     done["already"] = done.get("already", 0) + 1
                 else:
                     done["deleted"] += 1
-                _audit({"ts": db.now(), "action": "cloud_delete", "path": rec["path"],
+                audit({"ts": db.now(), "action": "cloud_delete", "path": rec["path"],
                         "size": rec["size"], "sha256": rec["sha256"],
                         "level": level, "permanently": permanently,
                         "archive": rec.get("archive_name")})

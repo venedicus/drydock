@@ -148,6 +148,62 @@ def test_loop_stops_on_full_disk(tmp_conn) -> None:
     print("полный диск: круг остановился на первом проходе")
 
 
+def test_loop_pause_uses_config_escalation(tmp_conn) -> None:
+    """Пауза кругов берётся из настройки, а не из жёстких 60 секунд.
+
+    Именно «круг 50..65: спасено 0» из логов за 07.11 был долбёжкой по
+    раненому хранилищу раз в минуту. Теперь пустой круг ждёт 5 минут, а
+    после 12 пустых подряд -- час.
+    """
+    cfg = {"loop_pause_s": 300, "loop_pause_long_s": 3600,
+           "loop_pause_steps": 12, "idle_revived_max": 0}
+    assert config.loop_pause_seconds(1, cfg) == 300, cfg
+    assert config.loop_pause_seconds(11, cfg) == 300, cfg
+    assert config.loop_pause_seconds(12, cfg) == 3600, cfg
+    assert config.loop_pause_seconds(0, cfg) == 0, cfg
+    # 0 -- «сразу», отрицательные не уходят в прошлое.
+    zero = {**cfg, "loop_pause_s": 0, "loop_pause_long_s": -10}
+    for streak in (0, 1, 12, 100):
+        assert config.loop_pause_seconds(streak, zero) == 0, streak
+    print("пауза круга: короткая -> длинная, 0 = сразу")
+
+
+def test_loop_pause_zero_does_not_spin(tmp_conn) -> None:
+    """«Сразу» не должно превращаться в горячий цикл без await.
+
+    nap(0) обязан уступить цикл событий, иначе вечный режим повесит сервер.
+    Проверяем и что круги действительно идут, и что «стоп» доходит.
+    """
+    conn = tmp_conn
+    seed(conn, 2)
+    original = config.settings()
+    try:
+        data = dict(original)
+        data["autopilot_config"] = {
+            "loop_pause_s": 0, "loop_pause_long_s": 0,
+            "loop_pause_steps": 1, "idle_revived_max": 0,
+        }
+        config.save_settings(data)
+        job = db.job_start(conn, "download-loop", 2)
+
+        async def scenario() -> dict:
+            async def ask_stop() -> None:
+                await asyncio.sleep(0.05)
+                conn.execute("UPDATE jobs SET cancel=1 WHERE id=?", (job,))
+
+            asyncio.create_task(ask_stop())
+            return await asyncio.wait_for(
+                download.run_rounds(conn, FakeDisk(), None, job_id=job),
+                timeout=10)
+
+        res = asyncio.run(scenario())
+        assert res["rounds"] >= 1, res
+        assert res["stopped"] is True, res
+    finally:
+        config.save_settings(original)
+    print("пауза 0: круг не залипает и слушается «стоп»")
+
+
 def test_failures_are_counted_by_state() -> None:
     """Провал выгрузки -- это её состояния, а не чужой ключ failed."""
     counters = {"ok": 5, "salvaged": 2, "skipped": 3, "failed": 4,
@@ -177,6 +233,8 @@ def main() -> int:
     test_loop_stops_when_asked(_fresh_conn())
     test_loop_ends_when_nothing_left(_fresh_conn())
     test_loop_stops_on_full_disk(_fresh_conn())
+    test_loop_pause_uses_config_escalation(_fresh_conn())
+    test_loop_pause_zero_does_not_spin(_fresh_conn())
     test_failures_are_counted_by_state()
     print("\nрежим по кругу: все проверки прошли")
     return 0

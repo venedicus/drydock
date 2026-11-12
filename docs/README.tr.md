@@ -28,12 +28,14 @@ MIT · Windows · macOS · Linux · Python 3.12+ · Yandex ile bağlantılı de�
 | **Envanter** | bulutu dolaşıp adı, boyutu, heşleri ve ağaçtaki yerini kaydeder — artık indirilemeyenler dahil |
 | **Denetim** | indirmeden erişilebilirliği kontrol eder: ilk ve son bayt |
 | **Tur** | verilen her şeyi indirir, verilmeyenleri durdurulana kadar yeniden dener |
+| **Turlar** | ana ekranda kart: dört bekleme hazır ayarı, otopilot ve her eşik için ayrı ayar |
 | **Arşiv** | kurtarılanı 3.9 GB, 1.9 GB ciltlere veya tek dosyaya paketler |
 | **Silme** | doğrulanmış olanlarla bulutu boşaltır; üç katı seviye |
+| **Boş klasörler** | dosyası kalmayan klasör ağaçlarını kaldırır; karar yalnızca bulutun canlı içeriğine göre verilir |
 | **Sağlık** | neden olmadığını gösterir: nedenler, düğümler, görevler |
 
 Ayrıca: önizlemeler, elle kurtarılan dosyaların hesaba katılması, aynanın
-diskle eşitlenmesi, otopilot, komut paleti `Ctrl+K`, altı dil, koyu ve açık tema.
+diskle eşitlenmesi, komut paleti `Ctrl+K`, altı dil, koyu ve açık tema.
 
 ## Hızlı başlangıç
 

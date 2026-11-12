@@ -60,6 +60,22 @@ A second server notices the first and leaves its jobs alone, but two of them
 on one database is a bad idea: two walks write one checkpoint, two downloads
 write one `.part`.
 
+## The empty-folder list from the inventory can lag
+
+“Empty folders” offers candidates from the last inventory. Folders that became
+empty afterwards still show files in the database and are missed. “Scan the
+cloud again” lists every folder live and finds them, but that means thousands
+of Disk requests, so it runs as a separate job. The result is valid for 30
+minutes and does not survive a server restart; a stale list cannot be used for
+deletion. Either way, every tree is listed again immediately before deletion:
+if a file exists in the cloud at that moment, the cascade is left untouched.
+A contradictory Disk response (`total > 0` but empty `items`) also blocks
+deletion.
+
+By default empty folders go to the Yandex Trash, so the structure can be
+restored; empty folders take no quota. Permanent deletion needs a separate
+checkbox and a second confirmation.
+
 ## Job progress is still Russian
 
 The interface is translated into six languages, but lines like “round 3: saved

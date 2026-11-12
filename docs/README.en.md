@@ -28,13 +28,15 @@ MIT · Windows · macOS · Linux · Python 3.12+ · not affiliated with Yandex
 | **Inventory** | walks the cloud and records name, size, hashes and place in the tree — including files that can no longer be downloaded |
 | **Probe** | checks availability without downloading: first and last byte |
 | **Loop** | downloads everything that is served and re-checks the rest until stopped |
+| **Rounds** | main-screen card: four pause presets, autopilot and per-threshold fine-tuning |
 | **Archive** | packs what was rescued into 3.9 GB volumes, 1.9 GB volumes or a single file |
 | **Delete** | frees cloud space in three modes: verified copy, archived copy, or manual selection |
+| **Empty folders** | removes trees of folders with no files; decided only from live cloud contents |
 | **Health** | shows why it fails: reasons, nodes, jobs |
 | **Export** | writes the inventory to CSV or JSON: path, size, availability, hashes, where the rescued copy is |
 
 Also: previews, registering files rescued by hand, mirror sync with the disk,
-autopilot, command palette `Ctrl+K`, six languages, dark and light themes.
+command palette `Ctrl+K`, six languages, dark and light themes.
 
 ## How to install
 

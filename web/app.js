@@ -473,6 +473,15 @@ function paintActions(s, t_) {
       ? t(p ? "act.delete.sel" : "act.delete.ready")
       : t(p ? "act.delete.emptySel" : "act.delete.empty");
   $("btn-cloud-delete").disabled = !delN || busyKinds.has("cloud-delete");
+  // Счётчик прямо на кнопке: человек видит масштаб, не открывая окно.
+  // Число считает сервер в фоне и кладёт в /api/state.
+  const edN = (s.empty_dirs || {}).trees || 0;
+  $("btn-empty-dirs").textContent = edN
+    ? t("ed.buttonCount", { n: edN }) : t("ed.button");
+  // Уборка доступна всегда (точный список считает превью), но не второй
+  // раз поверх уже идущей задачи.
+  $("btn-empty-dirs").disabled = busyKinds.has("empty-dirs")
+    || busyKinds.has("empty-dirs-scan");
 
   // Видно, что числа относятся к выбору, а не ко всей коллекции.
   for (const id of ["btn-loop", "btn-archive", "btn-cloud-delete"]) {
@@ -480,6 +489,116 @@ function paintActions(s, t_) {
     el.classList.toggle("scoped", hasSel);
   }
 }
+
+// Человекочитаемая пауза для карточки кругов: 0 -> «сразу», иначе минуты
+// или часы. Секунды показываем только для мелких значений.
+function roundPauseText(seconds) {
+  const n = Math.max(0, Number(seconds) || 0);
+  if (n === 0) return t("round.pause.now");
+  if (n < 60) return t("round.pause.sec", { n });
+  if (n % 3600 === 0) return t("round.pause.hours", { n: n / 3600 });
+  if (n % 60 === 0) return t("round.pause.min", { n: n / 60 });
+  return t("round.pause.min", { n: Math.round(n / 60 * 10) / 10 });
+}
+
+// Карточка «Круги» на главном экране. Рисуется из /api/state -- сервер
+// один источник правды, три переключателя и подсказки не расходятся.
+function renderRounds(s) {
+  const cfg = s.autopilot_config || {};
+  const short = cfg.loop_pause_s ?? 300;
+  const long = cfg.loop_pause_long_s ?? 3600;
+  const steps = cfg.loop_pause_steps ?? 12;
+  const line = $("round-line");
+  if (line) {
+    line.textContent = Number(short) === 0 && Number(long) === 0
+      ? t("round.line.now")
+      : t("round.line.gradual", {
+          short: roundPauseText(short), long: roundPauseText(long), steps });
+  }
+  // Подсвечиваем активный пресет; «своя настройка» -- ни один не горит.
+  $("round-presets").querySelectorAll("button[data-preset]").forEach((b) => {
+    b.classList.toggle("on", b.dataset.preset === s.round_preset);
+    b.title = t("round.preset.tip." + b.dataset.preset);
+  });
+  const on = !!s.autopilot;
+  if ($("round-on")) $("round-on").checked = on;
+  if ($("autopilot")) $("autopilot").checked = on;
+  const state = $("round-state");
+  if (state) {
+    if (!on) {
+      state.textContent = t("round.state.off");
+    } else {
+      const dueAt = (s.autopilot_next_at || 0) * 1000;
+      const immediate = dueAt <= Date.now();
+      const when = new Date(dueAt).toLocaleString(I18N.lang);
+      state.textContent = immediate
+        ? t("autopilot.nextNow")
+        : s.autopilot_idle_streak > 0
+          ? t("autopilot.idle", { n: s.autopilot_idle_streak, when })
+          : t("autopilot.next", { n: when });
+    }
+  }
+  // Поля точной настройки не перезаписываем, пока человек в них правит.
+  if (!$("round-fine").open) {
+    const cfgKeys = [
+      ["rd-hours", "hours"], ["rd-idle-max", "idle_revived_max"],
+      ["rd-short", "idle_cooldown_min"], ["rd-long", "idle_long_min"],
+      ["rd-steps", "idle_steps"], ["rd-loop-short", "loop_pause_s"],
+      ["rd-loop-long", "loop_pause_long_s"],
+      ["rd-loop-steps", "loop_pause_steps"],
+    ];
+    for (const [id, key] of cfgKeys) {
+      if ($(id) && cfg[key] !== undefined) $(id).value = cfg[key];
+    }
+  }
+}
+
+// Один клик по пресету: меняем оба вида кругов сразу, без перезапуска.
+$("round-presets").addEventListener("click", async (e) => {
+  const btn = e.target.closest("button[data-preset]");
+  if (!btn || btn.disabled) return;
+  btn.disabled = true;
+  try {
+    await api("/api/rounds/config", { preset: btn.dataset.preset });
+    toast(t("round.saved"));
+    await refreshState(true);
+  } catch (err) {
+    toast(err.message, "err");
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+wrap($("round-apply"), async () => {
+  // Пустое поле не должно молча стать 0 («сразу»): берём прежнее значение.
+  const base = (lastState && lastState.autopilot_config) || {};
+  const num = (id, key, dflt) => {
+    const raw = $(id).value.trim();
+    if (raw === "") return base[key] ?? dflt;
+    const v = Number(raw);
+    return Number.isFinite(v) ? Math.max(0, v) : (base[key] ?? dflt);
+  };
+  const cfg = {
+    hours: num("rd-hours", "hours", 2),
+    idle_revived_max: num("rd-idle-max", "idle_revived_max", 0),
+    idle_cooldown_min: num("rd-short", "idle_cooldown_min", 5),
+    idle_long_min: num("rd-long", "idle_long_min", 60),
+    idle_steps: Math.max(1, num("rd-steps", "idle_steps", 12)),
+    loop_pause_s: num("rd-loop-short", "loop_pause_s", 300),
+    loop_pause_long_s: num("rd-loop-long", "loop_pause_long_s", 3600),
+    loop_pause_steps: Math.max(1, num("rd-loop-steps", "loop_pause_steps", 12)),
+  };
+  await api("/api/rounds/config", { config: cfg });
+  $("round-msg").textContent = t("round.saved");
+  toast(t("round.saved"));
+  await refreshState(true);
+});
+
+wrap($("round-on"), async () => {
+  const on = $("round-on").checked;
+  await api("/api/autopilot", { on });
+  toast(t(on ? "autopilot.on" : "autopilot.off"));
+});
 
 async function refreshState(fresh) {
   lastStateAt = Date.now();
@@ -547,6 +666,8 @@ async function refreshState(fresh) {
     where.onclick = () => api("/api/reveal", {}).catch((e) => toast(e.message, "err"));
   }
 
+  // ── Карточка «Круги»: настройка на виду, рисуется из состояния ─────
+  renderRounds(s);
   // ── Карточка «Что дальше»: программа считает шаг сама ───────────────
   renderNext(s, t_);
   // Чекпоинт описи: прерванный обход продолжается сам, но интерфейс об
@@ -570,11 +691,19 @@ async function refreshState(fresh) {
     hintBits.push(t("scan.skipped", { n: skipped }));
   }
   if (s.autopilot) {
-    const cfg = s.autopilot_config || {};
-    hintBits.push(s.autopilot_last_at
-      ? t("autopilot.next", { n: new Date(s.autopilot_last_at * 1000
-          + (cfg.hours || 2) * 3600 * 1000).toLocaleString(I18N.lang) })
-      : t("autopilot.nextSoon"));
+    const dueAt = s.autopilot_next_at || 0;
+    // Пауза 0 -- «сразу»: время следующего круга уже наступило, показывать
+    // прошедшую дату было бы враньём.
+    const immediate = dueAt <= Date.now() / 1000;
+    const when = new Date(dueAt * 1000).toLocaleString(I18N.lang);
+    if (immediate) {
+      hintBits.push(t("autopilot.nextNow"));
+    } else if (s.autopilot_idle_streak > 0) {
+      hintBits.push(t("autopilot.idle", {
+        n: s.autopilot_idle_streak, when }));
+    } else {
+      hintBits.push(t("autopilot.next", { n: when }));
+    }
   }
   hint.textContent = hintBits.join(" · ");
   if (s.scan_pending) {
@@ -1161,7 +1290,9 @@ const JOB_BUTTONS = {
   scan: "btn-scan", previews: "btn-previews", probe: "btn-probe",
   download: "btn-download", "download-loop": "btn-loop",
   archive: "btn-archive",
-  "cloud-delete": "btn-cloud-delete", adopt: "btn-adopt", mirror: "btn-mirror",
+  "cloud-delete": "btn-cloud-delete", "empty-dirs": "btn-empty-dirs",
+  "empty-dirs-scan": "btn-empty-dirs",
+  adopt: "btn-adopt", mirror: "btn-mirror",
 };
 
 // Завершённые задачи можно скрыть: они остаются в базе и в логе, но
@@ -1202,6 +1333,22 @@ function handleJobsData(data) {
   if (wasBusy.has("download-loop") && !busyKinds.has("download-loop")) {
     const loop = data.items.find((j) => j.kind === "download-loop");
     if (loop) toast(jobText(loop.message) || t("loop.finished"));
+  }
+  if (wasBusy.has("empty-dirs") && !busyKinds.has("empty-dirs")) {
+    // Часть деревьев может оказаться непустой при живой проверке --
+    // человек должен это увидеть, а не гадать, почему счётчик не обнулился.
+    toast(t("ed.done"));
+  }
+  if (wasBusy.has("empty-dirs-scan") && !busyKinds.has("empty-dirs-scan")) {
+    const scan = data.items.find((j) => j.kind === "empty-dirs-scan");
+    const ok = scan && scan.state === "done";
+    toast(ok ? t("ed.liveScanDone") : t("ed.liveScanFailed"));
+    // Обход запускали из окна уборки -- вернуть человека к свежему
+    // списку, а не заставлять искать кнопку заново.
+    if (edScanPending) {
+      edScanPending = false;
+      if (ok) emptyDirsFlow(true).catch(() => {});
+    }
   }
   wasRunning = running.length > 0;
 }
@@ -1620,8 +1767,17 @@ function paletteCommands() {
       run: () => $("btn-archive").click() },
     { label: t("act.delete"), kw: "delete удалить облако",
       run: () => $("btn-cloud-delete").click() },
+    { label: t("ed.title"), kw: "empty пустые папки убрать очистить дерево",
+      run: () => $("btn-empty-dirs").click() },
     { label: t("tools.title"), kw: "tools инструменты ещё доп настройки",
       run: () => openTools() },
+    { label: t("round.title"), kw: "round круг пауза тайминг интервал 5 минут час сразу",
+      hint: t("round.preset.gradual"),
+      run: () => {
+        $("round-card").scrollIntoView({ block: "nearest", behavior: "smooth" });
+        $("round-card").classList.add("flash");
+        setTimeout(() => $("round-card").classList.remove("flash"), 1200);
+      } },
     { label: t("support.label"),
       kw: "support поддержка поддержать донат donate thanks спасибо реквизиты",
       run: () => window.open("https://venedicus.github.io/drydock/", "_blank",
@@ -1936,7 +2092,9 @@ window.settingsModal = async () => {
      <p class="dim">${s.port_from_env ? t("set.port.env") : t("set.port.hint")}</p>
      ${s.locked_by_env
         ? `<div class="warnbox">${t("set.envLock")}</div>`
-        : `<div class="warnbox">${t("set.restart")}</div>`}`,
+        : `<div class="warnbox">${t("set.restart")}</div>`}
+     <hr style="margin:14px 0;border:none;border-top:1px solid var(--border)">
+     <p class="dim">${t("round.inSettings")}</p>`,
     [{ label: t("btn.cancel"), cls: "ghost", onClick: closeModal },
      { label: t("btn.save"), cls: "primary", onClick: async () => {
         const rootVal = $("set-root").value.trim();
@@ -2011,6 +2169,7 @@ window.settingsModal = async () => {
       }
     };
   }
+
 };
 wrap($("btn-settings"), () => settingsModal());
 
@@ -2376,6 +2535,105 @@ function cloudDeleteChoose() {
 }
 
 wrap($("btn-cloud-delete"), cloudDeleteChoose);
+
+// ── пустые папки в облаке ───────────────────────────────────────────
+//
+// Удаляем ПАПКИ, а не файлы: отдельная кнопка прямо рядом с деревом,
+// отдельное окно. Список считает сервер по описи, но перед удалением он
+// же перепроверяет каждое дерево живым запросом -- устаревшая опись не
+// может привести к удалению папки, куда за ночь положили файл.
+
+let edScanPending = false;
+// Какой список показывать: по описи (по умолчанию) или по полному живому
+// обходу. Выбор живёт только до перезагрузки страницы -- вместе с кэшем
+// обхода на сервере, который тоже не переживает перезапуск.
+let edUseLive = false;
+
+async function emptyDirsFlow(preferLive) {
+  if (preferLive) edUseLive = true;
+  // Оба превью дешёвые: опись считается из кэша, живой обход -- из
+  // памяти. Ни один из них не ходит в сеть в обработчике запроса.
+  const [inv, live] = await Promise.all([
+    api("/api/empty-dirs/preview"),
+    api("/api/empty-dirs/preview?source=live"),
+  ]);
+  const usable = !live.needs_scan && !live.stale && live.complete;
+  if (edUseLive && !usable) edUseLive = false;
+  const pre = edUseLive ? live : inv;
+  const sample = (pre.sample || []).length
+    ? `<p class="dim" style="margin:10px 0 2px">${t("ed.sample")}</p>
+       <div class="mono">${pre.sample.map(esc).join("<br>")}</div>`
+    : "";
+  const liveBlock = usable
+    ? `<label class="check" style="margin-top:10px">
+         <input type="checkbox" id="ed-live" ${edUseLive ? "checked" : ""}>
+         <span>${t("ed.liveUse", {
+           trees: live.trees, scanned: live.scanned,
+           blocked: live.blocked })}</span></label>`
+    : `<div class="warnbox" style="margin-top:10px">${
+        live.needs_scan ? t("ed.liveNeeded") : t("ed.liveStale")}</div>`;
+  const buttons = [
+    { label: t("btn.cancel"), cls: "ghost", onClick: closeModal },
+    { label: t("ed.liveScan"), cls: "accent",
+      onClick: async () => {
+        if (busyKinds.has("empty-dirs-scan")) {
+          toast(t("ed.liveScanBusy"));
+          return;
+        }
+        closeModal();
+        edScanPending = true;
+        await api("/api/empty-dirs/scan", {});
+        toast(t("ed.liveScanStarted"));
+        await pollJobs();
+      } },
+  ];
+  if (pre.trees) {
+    buttons.push({ label: t("ed.go", { n: pre.trees }), cls: "danger",
+      onClick: async () => {
+        // Все чекбоксы читаем ДО второго подтверждения: confirmModal
+        // заменяет содержимое окна, и элементов уже не будет.
+        const permanent = !!$("ed-permanent")?.checked;
+        const useLive = !!$("ed-live")?.checked;
+        const chosen = useLive ? live : inv;
+        if (permanent && !await confirmModal(
+            t("dlg.title"),
+            t("ed.confirmPermanent", { n: chosen.trees }),
+            t("ed.go", { n: chosen.trees }), true)) return;
+        closeModal();
+        await api("/api/empty-dirs", {
+          confirm: chosen.confirm, permanently: permanent,
+          source: useLive ? "live" : "inventory" });
+        toast(t("ed.started", { n: chosen.trees }));
+        await pollJobs();
+      } });
+  }
+  modal(t("ed.title"),
+    `<p class="dim" style="margin:0 0 8px">${t("ed.body")}</p>`
+    + `<div class="warnbox">${t("ed.check")}</div>`
+    + (pre.trees > 200 ? `<div class="warnbox">${t("ed.slow")}</div>` : "")
+    + (pre.source === "live"
+        ? `<div class="warnbox">${t("ed.liveWhy")}</div>` : "")
+    + `<p style="margin:10px 0 2px">${pre.trees
+        ? t("ed.found", { trees: pre.trees, folders: pre.folders })
+        : t("ed.none")}</p>`
+    + sample
+    + liveBlock
+    + `<label class="check" style="margin-top:10px">
+         <input type="checkbox" id="ed-permanent">
+         <span>${t("ed.permanent")}</span></label>`
+    + `<p class="dim" style="margin:4px 0 0">${t("ed.trash")}</p>`,
+    buttons);
+  // Переключение источника перерисовывает окно: иначе «Найдено N» и
+  // список примеров остались бы от описи, а удаление пошло бы по облаку.
+  const liveBox = $("ed-live");
+  if (liveBox) liveBox.onchange = () => {
+    edUseLive = !!liveBox.checked;
+    closeModal();
+    emptyDirsFlow().catch(() => {});
+  };
+}
+
+wrap($("btn-empty-dirs"), emptyDirsFlow);
 
 // ── доступ к Диску ──────────────────────────────────────────────────
 //

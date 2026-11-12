@@ -180,7 +180,8 @@ def main() -> int:
               "['tree','lens','summary'].every(id => document.getElementById(id))"
               " && !!document.querySelector('.acts')")
         check("кнопки действий на месте",
-              "['btn-scan','btn-loop','btn-archive','btn-cloud-delete','btn-tools']"
+              "['btn-scan','btn-loop','btn-archive','btn-cloud-delete',"
+              "'btn-empty-dirs','btn-tools']"
               ".every(id => document.getElementById(id))")
 
         # Первый запуск на пустой базе: программа не должна говорить

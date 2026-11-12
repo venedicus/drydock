@@ -27,12 +27,14 @@ MIT · Windows · macOS · Linux · Python 3.12+ · Yandex ilə əlaqəli deyil
 | **Siyahı** | buludu gəzib adı, ölçüsü, heşləri və ağacdakı yerini yazır — artıq endirilə bilməyənlər də daxil |
 | **Yoxlama** | endirmədən əlçatanlığı yoxlayır: ilk və son bayt |
 | **Tur** | verilən hər şeyi endirir, verilməyənləri dayandırana qədər yenidən yoxlayır |
+| **Turlar** | əsas ekranda kart: dörd fasilə hazır tənzimləməsi, avtopilot, hər hədd üçün ayrı sazlama |
 | **Arxiv** | xilas ediləni 3.9 GB, 1.9 GB cildlərə və ya bir fayla yığır |
 | **Silmə** | yoxlanılmışlarla buludu boşaldır; üç səviyyə |
+| **Boş qovluqlar** | faylı qalmayan qovluq ağaclarını silir; qərar yalnız buludun canlı məzmununa əsasən |
 | **Sağlamlıq** | niyə alınmadığını göstərir: səbəblər, qovşaqlar, tapşırıqlar |
 
 Həmçinin: önizləmələr, əllə xilas edilən faylların hesaba alınması, aynanın
-disklə tutuşdurulması, avtopilot, `Ctrl+K` palitrası, altı dil, tünd və işıqlı mövzu.
+disklə tutuşdurulması, `Ctrl+K` palitrası, altı dil, tünd və işıqlı mövzu.
 
 ## Sürətli başlanğıc
 

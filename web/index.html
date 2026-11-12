@@ -268,6 +268,10 @@ try {
               data-i18n-title="btn.onlyUnsaved.title"></button>
       <button id="btn-show-empty" class="ghost"
               data-i18n-title="tree.showEmpty.title"></button>
+      <!-- Уборка пустых папок -- прямо там, где человек их видит: рядом
+           с переключателем «показывать пустые», а не в «Инструментах». -->
+      <button id="btn-empty-dirs" class="ghost" data-i18n="ed.button"
+              data-i18n-title="ed.button.title"></button>
     </div>
     <div class="legend">
       <span class="lbl2" data-i18n="legend.dot"></span>
@@ -287,6 +291,51 @@ try {
   <aside class="pane side">
     <div id="setup-card" class="card setup hidden"></div>
     <div id="now-card" class="card now hidden"></div>
+    <!-- Тайминг кругов -- на самом виду. Раньше он жил в модалке настроек
+         внутри «Инструментов», и до него просто не доходили. Один клик по
+         пресету меняет и автопилот, и выгрузку по кругу: человеку не надо
+         знать, что это два разных механизма. -->
+    <div id="round-card" class="card round">
+      <h4><span data-i18n="round.title"></span>
+        <span class="grow"></span>
+        <label class="switch" data-i18n-title="autopilot.title">
+          <input type="checkbox" id="round-on"></label></h4>
+      <p class="round-hint" data-i18n="round.hint"></p>
+      <div class="round-line" id="round-line"></div>
+      <div class="round-presets" id="round-presets">
+        <button type="button" data-preset="now" data-i18n="round.preset.now"></button>
+        <button type="button" data-preset="m5" data-i18n="round.preset.m5"></button>
+        <button type="button" data-preset="h1" data-i18n="round.preset.h1"></button>
+        <button type="button" data-preset="gradual" data-i18n="round.preset.gradual"></button>
+      </div>
+      <div class="round-state dim" id="round-state"></div>
+      <details class="round-fine" id="round-fine">
+        <summary data-i18n="round.fine"></summary>
+        <div class="round-grid">
+          <label><span data-i18n="ap.hours"></span>
+            <input id="rd-hours" type="number" min="0" step="0.5"></label>
+          <label><span data-i18n="ap.idleMax"></span>
+            <input id="rd-idle-max" type="number" min="0" step="1"></label>
+          <label><span data-i18n="ap.shortMin"></span>
+            <input id="rd-short" type="number" min="0" step="1"></label>
+          <label><span data-i18n="ap.longMin"></span>
+            <input id="rd-long" type="number" min="0" step="1"></label>
+          <label><span data-i18n="ap.steps"></span>
+            <input id="rd-steps" type="number" min="1" step="1"></label>
+          <label><span data-i18n="round.loopShort"></span>
+            <input id="rd-loop-short" type="number" min="0" step="30"></label>
+          <label><span data-i18n="round.loopLong"></span>
+            <input id="rd-loop-long" type="number" min="0" step="60"></label>
+          <label><span data-i18n="round.loopSteps"></span>
+            <input id="rd-loop-steps" type="number" min="1" step="1"></label>
+        </div>
+        <div class="round-actions">
+          <button type="button" id="round-apply" class="ghost"
+                  data-i18n="ap.apply"></button>
+          <span id="round-msg" class="dim"></span>
+        </div>
+      </details>
+    </div>
     <div id="next-card" class="card next"></div>
     <div id="totals-card" class="card"></div>
     <div id="detail" class="detail empty" data-i18n="detail.empty"></div>
