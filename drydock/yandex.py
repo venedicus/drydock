@@ -81,10 +81,6 @@ class Probe:
     storage_host: str | None = None
     detail: str | None = None
 
-    @property
-    def available(self) -> bool:
-        return self.state == "ok"
-
 
 class Disk:
     def __init__(self, token: str, *, concurrency: int | None = None) -> None:

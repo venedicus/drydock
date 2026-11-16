@@ -65,13 +65,6 @@ def no_window() -> int:
     return getattr(subprocess, "CREATE_NO_WINDOW", 0) if IS_WINDOWS else 0
 
 
-def _first_existing(paths: list[str]) -> Path | None:
-    for raw in paths:
-        if raw and Path(raw).is_file():
-            return Path(raw)
-    return None
-
-
 def file_manager() -> list[str] | None:
     """Команда, открывающая папку (и, если умеет, выделяющая файл).
 

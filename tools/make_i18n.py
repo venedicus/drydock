@@ -1880,6 +1880,11 @@ S: dict[str, dict[str, object]] = {
         "uz": "«;» ajratgichli va BOM li CSV — Excelda darhol ochiladi",
         "az": "“;” ayırıcılı və BOM-lu CSV — Excel-də dərhal açılır",
     },
+    "export.format.title": {
+        "ru": "Формат файла описи", "en": "Inventory file format",
+        "tr": "Envanter dosyası biçimi", "kk": "Тізім файлының пішімі",
+        "uz": "Roʻyxat fayli formati", "az": "Siyahı faylı formatı",
+    },
     "btn.settings": {
         "ru": "Настройки", "en": "Settings", "tr": "Ayarlar",
         "kk": "Баптаулар", "uz": "Sozlamalar", "az": "Tənzimləmələr",
@@ -2924,14 +2929,6 @@ S: dict[str, dict[str, object]] = {
     },
 
     # ── удаление из облака ───────────────────────────────────────────
-    "del.level.title": {
-        "ru": "Насколько надёжно должно быть спасено, чтобы удалять из облака",
-        "en": "How safely rescued a file must be before cloud deletion",
-        "tr": "Buluttan silmeden önce dosyanın ne kadar güvenle kurtarılmış olması gerektiği",
-        "kk": "Бұлттан жою үшін файл қаншалықты сенімді құтқарылуы керек",
-        "uz": "Bulutdan oʻchirish uchun fayl qanchalik ishonchli qutqarilgan boʻlishi kerak",
-        "az": "Buluddan silmək üçün faylın nə qədər etibarlı xilas edilməsi lazımdır",
-    },
     "del.level.archived": {
         "ru": "в проверенном архиве", "en": "in a verified archive",
         "tr": "doğrulanmış arşivde", "kk": "тексерілген мұрағатта",

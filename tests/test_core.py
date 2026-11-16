@@ -383,12 +383,12 @@ def test_inflight_reserve(tmp: Path):
         download._inflight = 0
         # Ровно до запаса: после этого ещё один байт уже не влезает.
         first = free - reserve
-        assert download._claim_space(first), "влезает до запаса"
-        assert not download._claim_space(gb), "второй файл уже съедает запас"
-        assert download._claim_space(0), "нулевой размер не мешает"
-        download._release_space(first)
-        assert download._claim_space(first), "после освобождения -- снова можно"
-        download._release_space(first)
+        claim = download.SpaceClaim(first)
+        assert claim.claim(), "влезает до запаса"
+        assert not download.SpaceClaim(gb).claim(), "второй файл уже не влезает"
+        assert download.SpaceClaim(0).claim(), "нулевой размер не мешает"
+        claim.release()
+        assert download.SpaceClaim(first).claim(), "после освобождения -- снова можно"
         download._inflight = 0
         assert download._inflight == 0
     finally:

@@ -248,6 +248,9 @@ let loadedAssets = null;
 let lastState = null;
 let lastTotals = null;
 let selPlan = null;
+// Уровень удаления живёт здесь, а не в скрытом <select>: его выбирает
+// модалка, и по нему же считается счётчик на кнопке.
+let deleteLevel = "downloaded";
 
 // ── линза: одни и те же данные, три разных вопроса ────────────────────
 // «Сейчас» -- что облако ещё держит; «Было» -- вся опись с судьбой
@@ -1061,7 +1064,7 @@ function refreshSelection() {
       const data = await api("/api/selection/plan", selectionBody({
         volume: archOpts.volume,
         compression: archOpts.compression,
-        level: $("delete-level").value,
+        level: deleteLevel,
       }));
       const p = data.plan;
       // Части с нулём не показываем: «не проверено 0» -- это шум, а не
@@ -2529,7 +2532,14 @@ function cloudDeleteChoose() {
         // Безопасный уровень -- основной; выборочное удаление заметно,
         // но не спорит с ним за внимание.
         cls: v === "downloaded" ? "primary" : v === "selected" ? "accent" : "",
-        onClick: () => { closeModal(); cloudDeleteFlow(v); },
+        onClick: () => {
+          deleteLevel = v;
+          closeModal();
+          // Счётчик на кнопке считается по тому же уровню -- пересчитать
+          // его до открытия окна предпросмотра.
+          refreshSelection();
+          cloudDeleteFlow(v);
+        },
       })),
      { label: t("btn.cancel"), cls: "ghost", onClick: closeModal }]);
 }
@@ -2808,6 +2818,13 @@ $("btn-clear").onclick = () => {
 
 $("f-ok").onchange = refreshSelection;
 $("f-unsaved").onchange = refreshSelection;
+
+// Формат описи: ссылка остаётся обычной загрузкой файла, меняется только
+// query-параметр. Клик по самому select не должен увести по ссылке.
+$("export-format").onclick = (e) => e.stopPropagation();
+$("export-format").onchange = (e) => {
+  $("btn-export").href = "/api/export?format=" + e.target.value;
+};
 
 let searchTimer = null;
 $("search").oninput = () => {

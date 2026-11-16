@@ -226,14 +226,6 @@ async def cmd_adopt(args) -> int:
     return 0
 
 
-def cmd_compact(_args) -> int:
-    conn = _conn()
-    r = scan.compact_catalog(conn)
-    print(f"catalog.jsonl: {r['records']} записей, "
-          f"{human(r['before'])} -> {human(r['after'])}")
-    return 0
-
-
 def cmd_export(_args) -> int:
     conn = _conn()
     print(f"Опись: {scan.export_manifest(conn)}")
@@ -319,8 +311,6 @@ def cmd_auth(args) -> int:
 
 
 async def cmd_whoami(_args) -> int:
-    conn_token = config.require_token()
-    del conn_token
     async with Disk(config.require_token()) as disk:
         info = await disk.about()
     user = info.get("user") or {}
@@ -403,9 +393,6 @@ def main(argv: list[str] | None = None) -> int:
                    help="не сверять хеши (быстро, но файл будет unverified)")
     p.add_argument("--dry-run", action="store_true")
     p.set_defaults(fn=cmd_adopt, is_async=True)
-
-    p = sub.add_parser("compact", help="пересобрать catalog.jsonl без повторов")
-    p.set_defaults(fn=cmd_compact, is_async=False)
 
     p = sub.add_parser("export", help="выгрузить опись в jsonl")
     p.set_defaults(fn=cmd_export, is_async=False)

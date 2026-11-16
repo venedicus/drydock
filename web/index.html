@@ -218,7 +218,14 @@ try {
          download data-i18n-title="tools.export.why">
         <span class="tn" data-i18n="btn.export"></span>
         <span class="td" data-i18n="tools.export.hint"></span>
-        <span class="tool-ctl">⇩</span>
+        <span class="tool-ctl">
+          <select id="export-format" data-i18n-title="export.format.title"
+                  aria-label="Export format">
+            <option value="csv" selected>CSV</option>
+            <option value="json">JSON</option>
+          </select>
+          ⇩
+        </span>
       </a>
       <button class="tool" id="btn-settings" data-i18n-title="btn.settings.title">
         <span class="tn" data-i18n="btn.settings"></span>
@@ -235,12 +242,6 @@ try {
         <span class="tool-ctl support-go" data-i18n="support.go"></span>
       </a>
 
-      <!-- Уровень удаления выбирается в модалке кнопки; select живёт здесь,
-           чтобы обработчик читал одно и то же место. -->
-      <select id="delete-level" class="hidden" data-i18n-title="del.level.title">
-        <option value="downloaded" selected data-i18n="del.level.downloaded"></option>
-        <option value="archived" data-i18n="del.level.archived"></option>
-      </select>
     </div>
   </div>
 </div>

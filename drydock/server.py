@@ -142,6 +142,20 @@ class AutopilotBody(BaseModel):
     config: dict | None = None
 
 
+def _save_round_config(cfg_in: dict) -> dict:
+    """Сохранить точечные поля настройки кругов, игнорируя лишние ключи."""
+    data = config.settings()
+    cur = data.get("autopilot_config")
+    if not isinstance(cur, dict):
+        cur = {}
+    for key in config.AUTOPILOT_CONFIG_KEYS:
+        if key in cfg_in and cfg_in[key] not in (None, ""):
+            cur[key] = cfg_in[key]
+    data["autopilot_config"] = cur
+    config.save_settings(data)
+    return config.autopilot_config()
+
+
 @app.post("/api/autopilot")
 def set_autopilot(body: AutopilotBody) -> dict:
     """Включить или выключить автопилот: перепроверку недоступного и забор
@@ -159,15 +173,7 @@ def set_autopilot(body: AutopilotBody) -> dict:
     db.kv_set(c, "autopilot_idle_streak", 0)
     cfg_in = body.config or {}
     if isinstance(cfg_in, dict) and cfg_in:
-        data = config.settings()
-        cur = data.get("autopilot_config")
-        if not isinstance(cur, dict):
-            cur = {}
-        for key in config.AUTOPILOT_CONFIG_KEYS:
-            if key in cfg_in and cfg_in[key] not in (None, ""):
-                cur[key] = cfg_in[key]
-        data["autopilot_config"] = cur
-        config.save_settings(data)
+        _save_round_config(cfg_in)
     return {"on": bool(body.on), "config": config.autopilot_config()}
 
 
@@ -176,20 +182,6 @@ class RoundsBody(BaseModel):
     preset: str | None = None
     # Или точечная настройка любого поля из config.AUTOPILOT_CONFIG_KEYS.
     config: dict | None = None
-
-
-def _save_round_config(cfg_in: dict) -> dict:
-    """Сохранить точечные поля настройки кругов, игнорируя лишние ключи."""
-    data = config.settings()
-    cur = data.get("autopilot_config")
-    if not isinstance(cur, dict):
-        cur = {}
-    for key in config.AUTOPILOT_CONFIG_KEYS:
-        if key in cfg_in and cfg_in[key] not in (None, ""):
-            cur[key] = cfg_in[key]
-    data["autopilot_config"] = cur
-    config.save_settings(data)
-    return config.autopilot_config()
 
 
 def _active_round_preset(cfg: dict) -> str | None:
@@ -708,8 +700,7 @@ def _spawn(kind: str, coro_factory, total: int = 0,
 
 # Итоги по всей коллекции -- тяжёлый запрос. Интерфейс опрашивает
 # состояние, пока идёт работа; кэш убирает пересчёт из обработчика.
-_totals_cache: dict = {"at": 0.0, "value": None}
-TOTALS_TTL = 20.0
+_totals_cache: dict = {"value": None}
 
 
 def cached_totals(force: bool = False) -> dict:
@@ -722,7 +713,7 @@ def cached_totals(force: bool = False) -> dict:
     if not force and _totals_cache["value"] is not None:
         return _totals_cache["value"]
     value = tree.totals(conn())
-    _totals_cache.update(at=time.monotonic(), value=value)
+    _totals_cache["value"] = value
     return value
 
 
@@ -730,7 +721,7 @@ def cached_totals(force: bool = False) -> dict:
 # опрос состояния нельзя: опись на 42 тыс. строк читается ~0.27 с, а с
 # холодным кэшем диска -- до 16 с. Тот же приём, что и с итогами: свежесть
 # держит фоновая задача, обработчик читает готовое.
-_empty_cache: dict = {"at": 0.0, "value": None}
+_empty_cache: dict = {"value": None}
 
 
 def cached_empty_dirs(force: bool = False) -> dict:
@@ -742,7 +733,7 @@ def cached_empty_dirs(force: bool = False) -> dict:
     """
     if force:
         value = emptydirs.preview(conn(), sample=0)
-        _empty_cache.update(at=time.monotonic(), value=value)
+        _empty_cache["value"] = value
         return value
     return _empty_cache["value"] or {"trees": 0, "folders": 0,
                                      "sample": [], "confirm": 0}
@@ -773,7 +764,7 @@ def live_scan_preview() -> dict:
         "root": _live_scan_cache["root"]}
 
 
-_remaining_cache: dict = {"at": 0.0, "value": None}
+_remaining_cache: dict = {"value": None}
 
 
 def cached_remaining(force: bool = False) -> dict:
@@ -790,7 +781,7 @@ def cached_remaining(force: bool = False) -> dict:
     # число, а не «сколько недоступных вообще»: они расходятся.
     from . import download
     value["loop_queue"] = download.pending_count(conn())
-    _remaining_cache.update(at=time.monotonic(), value=value)
+    _remaining_cache["value"] = value
     return value
 
 
@@ -1044,7 +1035,6 @@ def start_scan(body: ScanBody) -> dict:
             scan.export_manifest(conn())
         except OSError as exc:
             log.warning("опись собрана, но файл не записан: %s", exc)
-            result["manifest_error"] = str(exc)[:200]
         return result
     return {"job": _spawn("scan", work)}
 

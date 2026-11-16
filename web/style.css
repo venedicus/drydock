@@ -562,9 +562,6 @@ kbd { font: 11px/1.4 Consolas, monospace; background: var(--bg-3);
 .acc .space .bar3 > i.full { background: var(--bad); }
 
 /* ── инструменты: окно с секциями ──────────────────────────────────── */
-.tools-btn { align-self: flex-start; margin-top: 2px; padding: 6px 12px;
-             border: 1px solid var(--line); background: var(--bg-3);
-             color: var(--fg-dim); font-size: 12px; border-radius: 8px; }
 .tools-box { width: min(720px, 94vw); }
 .tools-hint { margin: 0 0 10px; font-size: 12px; }
 .tool { display: flex; align-items: center; gap: 12px; width: 100%;

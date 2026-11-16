@@ -388,8 +388,6 @@ PROBE_TTL_HOURS = float(os.environ.get("DRYDOCK_PROBE_TTL", "12"))
 # Проба доступности: мёртвый файл висит и отдаёт 504 минутами. Ждать
 # столько на каждый файл нельзя; живому серверу хватает нескольких секунд.
 PROBE_TIMEOUT = float(os.environ.get("DRYDOCK_PROBE_TIMEOUT", "15"))
-DOWNLOAD_TIMEOUT = float(os.environ.get("DRYDOCK_DOWNLOAD_TIMEOUT", "120"))
-
 # Сколько тишины в потоке выгрузки означает, что соединение мертво.
 # Ждать общий таймаут дважды незачем: хранилище рвёт передачу часто.
 DOWNLOAD_READ_TIMEOUT = float(
@@ -399,10 +397,9 @@ DOWNLOAD_READ_TIMEOUT = float(
 # обрыва, поэтому без повторов часть файлов остаётся недокачанной.
 DOWNLOAD_ATTEMPTS = int(os.environ.get("DRYDOCK_DOWNLOAD_ATTEMPTS", "5"))
 
-# Сколько ждать ПЕРВЫЙ байт и каждый следующий кусок. Это не то же самое,
-# что DOWNLOAD_TIMEOUT: тот ограничивает запрос целиком, а здесь предел на
-# МОЛЧАНИЕ. Живая машина хранилища начинает слать сразу; мёртвая отдаёт
-# кусок и замолкает.
+# Сколько ждать ПЕРВЫЙ байт и каждый следующий кусок. Это предел на МОЛЧАНИЕ,
+# а не на всю выгрузку: живая машина хранилища начинает слать сразу, мёртвая
+# отдаёт кусок и замолкает.
 DOWNLOAD_FIRST_BYTE_S = float(os.environ.get("DRYDOCK_FIRST_BYTE", "12"))
 DOWNLOAD_STALL_S = float(os.environ.get("DRYDOCK_STALL", "15"))
 
@@ -463,9 +460,6 @@ class Paths:
     @property
     def previews(self) -> Path:
         return self.meta / "previews"
-    @property
-    def catalog_jsonl(self) -> Path:
-        return self.meta / "catalog.jsonl"
     @property
     def archives(self) -> Path:
         return self.root / "archives"

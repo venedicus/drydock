@@ -181,7 +181,7 @@ def main() -> int:
               " && !!document.querySelector('.acts')")
         check("кнопки действий на месте",
               "['btn-scan','btn-loop','btn-archive','btn-cloud-delete',"
-              "'btn-empty-dirs','btn-tools']"
+              "'btn-empty-dirs','btn-tools','btn-export','export-format']"
               ".every(id => document.getElementById(id))")
 
         # Первый запуск на пустой базе: программа не должна говорить
@@ -219,6 +219,15 @@ def main() -> int:
         check("экспорт отдаёт CSV",
               "fetch('/api/export?format=csv').then(r => r.ok && "
               "(r.headers.get('content-type') || '').includes('text/csv'))")
+        check("экспорт отдаёт JSON",
+              "fetch('/api/export?format=json').then(r => r.ok && "
+              "(r.headers.get('content-type') || '').includes('application/json'))")
+        check("переключатель формата меняет ссылку экспорта",
+              "(() => { const s = document.querySelector('#export-format');"
+              " s.value = 'json'; s.dispatchEvent(new Event('change'));"
+              " const ok = document.querySelector('#btn-export').href"
+              ".includes('format=json'); s.value = 'csv';"
+              " s.dispatchEvent(new Event('change')); return ok; })()")
 
         # Окно удаления: безопасный уровень основной, «мусора» нет.
         page.js("cloudDeleteChoose()")

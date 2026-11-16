@@ -149,22 +149,6 @@ def current_stats() -> dict:
     """Текущие метрики скорости и остатка байт для задач выгрузки."""
     return _GLOBAL_SPEED.stats()
 
-def _claim_space(size: int) -> bool:
-    """Зарезервировать место под файл с учётом уже начатых выгрузок."""
-    global _inflight
-    needed = max(0, size)
-    with _SPACE_LOCK:
-        if free_space(config.PATHS.files) - needed - _inflight < config.RESERVE:
-            return False
-        _inflight += needed
-        return True
-
-
-def _release_space(size: int) -> None:
-    global _inflight
-    with _SPACE_LOCK:
-        _inflight = max(0, _inflight - size)
-
 def free_space(path: Path) -> int:
     probe = Path(path)
     while not probe.exists() and probe.parent != probe:

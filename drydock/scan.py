@@ -180,53 +180,46 @@ async def scan(conn: sqlite3.Connection, disk: Disk, root: str = "disk:/", *,
     completed = False
     last_beat = time.monotonic()
     try:
-        with open(extended(paths.catalog_jsonl), "a", encoding="utf-8") as cat:  # noqa: ASYNC230 - буферизованная запись на локальный диск
-            # Обходу отдаём саму очередь: свежая опись начинает с корня,
-            # продолженная -- с папок, оставшихся в чекпоинте.
-            async for item in disk.walk(
-                    stack or [root],
-                    should_stop=_stop,
-                    on_pending=_watch,
-                    skip=_skip_dir,
-                    on_folder=_folder_done,
-                    concurrency=concurrency):
-                # catalog.jsonl -- журнал ответов сервера. Пишем только
-                # новое или изменившееся: полный слепок уже лежит
-                # в resources.raw, а журнал уезжает в архивы.
-                fresh = json.dumps(item, ensure_ascii=False)
-                prev = conn.execute("SELECT raw FROM resources WHERE path=?",
-                                    (item.get("path"),)).fetchone()
-                db.upsert_resource(conn, item)
-                if prev is None or prev["raw"] != fresh:
-                    cat.write(fresh + "\n")
-                if item.get("type") == "dir":
-                    # Папка приходит дважды: как элемент родителя и как "сама
-                    # себя" при входе внутрь. Запись идемпотентна, а вот счётчик
-                    # без set() завышал бы итог вдвое. При продолжении с
-                    # чекпоинта к итогу прибавляются папки прошлого прохода.
-                    seen_dirs.add(item["path"])
-                    dirs = base_dirs + len(seen_dirs)
-                    if make_dirs:
-                        target = local_for(item["path"], paths.files)
-                        try:
-                            Path(extended(target)).mkdir(parents=True, exist_ok=True)
-                        except OSError:
-                            pass
-                else:
-                    files += 1
-                    total_bytes += int(item.get("size") or 0)
-                if job_id is not None and (files + dirs) % 50 == 0:
-                    db.job_progress(conn, job_id, files + dirs,
-                                    message=job_msg("scan.count",
-                                                    files=files, dirs=dirs))
-                    _watch(pending)
-                    if time.monotonic() - last_beat >= HEARTBEAT_SECONDS:
-                        log.info("опись: файлов %s, папок %s, в очереди %s, "
-                                 "сейчас %s", files, dirs, len(pending),
-                                 item.get("path"))
-                        last_beat = time.monotonic()
-                    if _stop():
-                        break
+        # Обходу отдаём саму очередь: свежая опись начинает с корня,
+        # продолженная -- с папок, оставшихся в чекпоинте.
+        async for item in disk.walk(
+                stack or [root],
+                should_stop=_stop,
+                on_pending=_watch,
+                skip=_skip_dir,
+                on_folder=_folder_done,
+                concurrency=concurrency):
+            # Полный ответ сервера лежит в resources.raw -- отдельный
+            # журнал ответов больше не ведём: его никто не читал.
+            db.upsert_resource(conn, item)
+            if item.get("type") == "dir":
+                # Папка приходит дважды: как элемент родителя и как "сама
+                # себя" при входе внутрь. Запись идемпотентна, а вот счётчик
+                # без set() завышал бы итог вдвое. При продолжении с
+                # чекпоинта к итогу прибавляются папки прошлого прохода.
+                seen_dirs.add(item["path"])
+                dirs = base_dirs + len(seen_dirs)
+                if make_dirs:
+                    target = local_for(item["path"], paths.files)
+                    try:
+                        Path(extended(target)).mkdir(parents=True, exist_ok=True)
+                    except OSError:
+                        pass
+            else:
+                files += 1
+                total_bytes += int(item.get("size") or 0)
+            if job_id is not None and (files + dirs) % 50 == 0:
+                db.job_progress(conn, job_id, files + dirs,
+                                message=job_msg("scan.count",
+                                                files=files, dirs=dirs))
+                _watch(pending)
+                if time.monotonic() - last_beat >= HEARTBEAT_SECONDS:
+                    log.info("опись: файлов %s, папок %s, в очереди %s, "
+                             "сейчас %s", files, dirs, len(pending),
+                             item.get("path"))
+                    last_beat = time.monotonic()
+                if _stop():
+                    break
         # «Дошли до конца» -- это только когда обход сам истощил очередь.
         # Отмена посреди папки и отмена во время паузы ретрая выглядят
         # как обычный конец цикла -- их и отличаем по флагу запроса.
@@ -398,30 +391,6 @@ async def _fresh_preview_url(conn: sqlite3.Connection, disk: Disk,
     if url:
         db.upsert_resource(conn, {k: v for k, v in data.items() if k != "_embedded"})
     return url
-
-
-def compact_catalog(conn: sqlite3.Connection) -> dict:
-    """Пересобрать catalog.jsonl из базы, без повторов.
-
-    До появления журнала изменений каждая опись дописывала каталог целиком,
-    и файл раздувался кратно числу проходов. Содержимое при этом не
-    теряется: полный ответ сервера по каждому ресурсу лежит в resources.raw,
-    так что файл собирается заново из базы.
-    """
-    dest = config.PATHS.catalog_jsonl
-    before = dest.stat().st_size if dest.is_file() else 0
-    tmp = dest.with_name(f"{dest.name}.{uuid.uuid4().hex[:8]}.tmp")
-    rows = conn.execute("SELECT raw FROM resources ORDER BY path")
-    n = 0
-    with open(extended(tmp), "w", encoding="utf-8") as fh:
-        for row in rows:
-            fh.write(row["raw"] + "\n")
-            n += 1
-    os.replace(extended(tmp), extended(dest))
-    after = dest.stat().st_size
-    log.info("catalog.jsonl пересобран: %s записей, %.0f -> %.0f МБ",
-             n, before / 2**20, after / 2**20)
-    return {"records": n, "before": before, "after": after}
 
 
 def export_manifest(conn: sqlite3.Connection, dest: Path | None = None) -> Path:
